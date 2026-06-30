@@ -58,6 +58,11 @@ class Settings(BaseSettings):
 
     # ── LLM ──
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    # Groq (the inference provider, key prefix `gsk_` — not to be confused with
+    # xAI's Grok). Fast OpenAI-compatible inference for open models; powers the
+    # chatbot's free-form Q&A when set (preferred over Anthropic, then the keyless parser).
+    groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
 
     # ── Player props (the-odds-api.com; optional, the sharpest projection source) ──
     odds_api_key: str | None = Field(default=None, alias="ODDS_API_KEY")

@@ -268,6 +268,22 @@ def api_dashboard(league: int | None = None) -> dict:
     return payload
 
 
+@app.post("/api/chat")
+def api_chat(body: dict = Body(...)) -> dict:
+    """NFL/league Q&A. Routes the question to deterministic data tools (real
+    nflverse stats + our projections + league scoring); the model only phrases."""
+    from fantasy.api.dashboard_data import read_snapshot
+    from fantasy.chat.agent import answer
+    from fantasy.chat.tools import ChatContext
+
+    question = (body.get("question") or "").strip()
+    league = body.get("league")
+    league_id = league if league is not None else _default_league_id()
+    snap = read_snapshot(league_id) or {}
+    ctx = ChatContext.from_snapshot(snap)
+    return answer(question, ctx)
+
+
 @app.post("/api/analyze-trade")
 def api_analyze_trade(body: dict = Body(...)) -> dict:
     from fantasy.api.dashboard_data import analyze_trade, read_snapshot

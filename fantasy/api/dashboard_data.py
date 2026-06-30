@@ -145,6 +145,12 @@ def assemble(service, league, store: Store, season: int, week: int, client=None,
         "lineup_total": round(total, 1), "standings": standings, "feed": feed,
         "actions": actions, "board_index": board_index, "report": report,
         "influence": influence,
+        "league_settings": {                      # compact, so the chatbot can answer offline
+            "summary": league.summary(),
+            "scoring": {k: v for k, v in league.scoring.items() if v},
+            "te_premium": dict(getattr(league, "position_reception_bonus", {}) or {}),
+            "roster": league.roster.starter_slots,
+        },
     }
 
 
