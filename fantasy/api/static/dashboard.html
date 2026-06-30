@@ -125,6 +125,7 @@
   .empty{color:var(--faint);font-size:13px;padding:18px;text-align:center;border:1px dashed var(--line);border-radius:11px}
   .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:2px 8px;border-radius:5px;border:1px solid var(--line)}
   .status.proposed{color:var(--amber)} .status.approved{color:var(--green)} .status.rejected{color:var(--red)}
+  .status.executed{color:#bbf7d0}
 
   /* Trade priority + report card */
   .badge.star{color:var(--amber);background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.4)}
@@ -140,6 +141,49 @@
   .tile .tv{font-size:22px;font-weight:600;font-family:var(--mono);margin-top:5px}
   .tile .ts{color:var(--muted);font-size:11.5px;margin-top:2px}
   .pos-v{color:var(--green)}.neg-v{color:var(--red)}
+
+  /* Leagues switcher */
+  .leagues{display:flex;flex-direction:column;gap:3px;margin:4px 0 2px}
+  .lg-head{display:flex;align-items:center;justify-content:space-between;color:var(--faint);
+    font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 10px 4px}
+  .lg-head button{padding:2px 8px;font-size:11px;border-radius:7px}
+  .lg{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;color:var(--muted);font-size:13px}
+  .lg:hover{background:rgba(255,255,255,.04);color:var(--text)}
+  .lg.active{background:rgba(59,130,246,.14);color:#fff;border-color:rgba(59,130,246,.35)}
+  .lg .lgdot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:0 0 7px}
+  .lg.active .lgdot{background:var(--blue);box-shadow:0 0 8px var(--blue)}
+  .lg .lgmeta{flex:1;min-width:0}.lg .lgmeta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lg .lgmeta small{color:var(--faint);font-size:10px;font-family:var(--mono)}
+  .lg .x{color:var(--faint);font-size:15px;opacity:0;transition:opacity .15s}
+  .lg:hover .x{opacity:.8}.lg .x:hover{color:var(--red)}
+  .addform{padding:6px 10px 10px;display:none;flex-direction:column;gap:6px}
+  .addform.show{display:flex}
+  .addform input{min-width:0;width:100%;padding:7px 9px;font-size:12px}
+  .addform .row{display:flex;gap:6px}
+
+  /* Card decision states */
+  .statusrow{display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+  .followed{color:var(--green)} .rej{color:var(--red)}
+  .confirmed-b{color:#bbf7d0;background:rgba(34,197,94,.14);font-size:10px;padding:2px 7px;border-radius:5px}
+  .verify-out{font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--mono)}
+  button.mini{padding:5px 10px;font-size:12px}
+
+  /* Undo toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:11px;padding:11px 16px;
+    display:flex;align-items:center;gap:14px;box-shadow:0 12px 44px rgba(0,0,0,.55);opacity:0;
+    pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;font-size:13.5px}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+
+  /* Shell / build banner */
+  .banner{display:flex;gap:12px;align-items:center;border:1px solid rgba(59,130,246,.35);
+    background:rgba(59,130,246,.07);border-radius:12px;padding:14px 16px;margin-bottom:18px}
+  .banner .t{flex:1;font-size:13.5px;color:var(--muted)}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--blue);
+    border-radius:50%;display:inline-block;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
   @media (max-width:1000px){.app{grid-template-columns:1fr}.side{display:none}.kpis{grid-template-columns:1fr 1fr}
     .cols-2{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
@@ -155,6 +199,7 @@
     <nav class="nav" id="nav">
       <a href="#trades" class="active" data-icon="swap">Trades</a>
       <a href="#report" data-icon="trend">Report Card</a>
+      <a href="#influence" data-icon="gauge">Bot Influence</a>
       <a href="#waivers" data-icon="plus">Waivers</a>
       <a href="#analyzer" data-icon="scale">Trade Analyzer</a>
       <a href="#lineup" data-icon="users">Start / Sit</a>
@@ -162,6 +207,21 @@
       <a href="#feed" data-icon="rss">News &amp; Experts</a>
       <a href="#actions" data-icon="list">Action Log</a>
     </nav>
+
+    <div class="leagues">
+      <div class="lg-head"><span>Your Leagues</span><button onclick="toggleAddForm()" id="addbtn">+ Add</button></div>
+      <div id="leagues-list"></div>
+      <div class="addform" id="addform">
+        <input type="text" id="add-lid" placeholder="League ID" inputmode="numeric" />
+        <div class="row">
+          <input type="text" id="add-tid" placeholder="Team ID" inputmode="numeric" />
+          <input type="text" id="add-season" placeholder="Season" inputmode="numeric" />
+        </div>
+        <button class="primary mini" onclick="addLeague()">Add league</button>
+        <div id="add-err" style="color:var(--red);font-size:11px"></div>
+      </div>
+    </div>
+
     <div class="spacer"></div>
     <div class="botcard">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="dot"></span><b id="botname">Bot online</b></div>
@@ -182,6 +242,7 @@
       </div>
     </div>
 
+    <div id="banner"></div>
     <div class="kpis" id="kpis"></div>
 
     <section id="trades">
@@ -194,6 +255,11 @@
     <section id="report">
       <div class="sec-head" data-sec-icon="trend"><h2>Season Report Card</h2><span class="count" id="report-season">—</span></div>
       <div id="report-body"><div class="empty">Report card builds from your finished season (run scripts/dashboard.py).</div></div>
+    </section>
+
+    <section id="influence">
+      <div class="sec-head" data-sec-icon="gauge"><h2>Bot Influence</h2><span class="count" id="influence-rate">—</span></div>
+      <div id="influence-body"><div class="empty">No decisions tracked yet — approve or reject a recommendation to start the ledger.</div></div>
     </section>
 
     <section id="waivers">
@@ -235,6 +301,8 @@
   </main>
 </div>
 
+<div id="toast"><span id="toast-msg"></span><button class="mini" id="toast-undo">Undo</button></div>
+
 <script>
 const I = {
   grid:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>',
@@ -247,6 +315,7 @@ const I = {
   list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   alert:'<path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
   trend:'<path d="M3 17l6-6 4 4 7-7M14 8h7v7"/>',
+  gauge:'<path d="M12 13l4-4M3.5 14a8.5 8.5 0 1 1 17 0"/><circle cx="12" cy="13" r="1.4"/>',
 };
 function icon(n){return `<svg viewBox="0 0 24 24">${I[n]||''}</svg>`}
 function secIcon(n){return `<svg class="ico" viewBox="0 0 24 24">${I[n]||''}</svg>`}
@@ -262,8 +331,16 @@ addEventListener('scroll',()=>{let cur=navLinks[0];
 
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 
+let ACTIVE_LEAGUE = null;   // null => server default league
+let STATUSES = {};
+let LEAGUES = [];
+
 async function refresh(){
-  const d = await (await fetch('/api/dashboard')).json();
+  const q = ACTIVE_LEAGUE!=null ? ('?league='+ACTIVE_LEAGUE) : '';
+  const d = await (await fetch('/api/dashboard'+q)).json();
+  window.CUR = d; STATUSES = d.statuses || {};
+  renderBanner(d);
+  renderInfluence(d.influence);
   document.getElementById('teamname').textContent = d.team.name;
   document.getElementById('leaguesub').textContent = d.team.league;
   document.getElementById('weekpill').textContent = 'WEEK '+d.team.week;
@@ -284,7 +361,7 @@ async function refresh(){
       <div class="reason">${esc(w.reason)}</div>
       <div class="meta"><span>${w.bid!=null?('FAAB <b>$'+w.bid+'</b>'):'<b>waiver claim</b>'}</span>
         <span>ROS value <b>+${w.value}</b></span><div class="bar"><i style="width:${Math.min(100,(w.conf||.6)*100)}%"></i></div></div>
-      <div class="btns">${actionBtns(w.id)}</div>
+      ${controls(w.id)}
     </div>`).join('') : emptyState('No waiver upgrades — your bench is solid.');
 
   // Trades (this manager's biggest edge — surfaced first + flagged)
@@ -298,7 +375,7 @@ async function refresh(){
       <div class="reason">${esc(t.reason)}</div>
       <div class="meta"><span>your gain <b>+${t.my_gain}</b></span><span>accept <b>${Math.round(t.accept*100)}%</b></span>
         <div class="bar"><i style="width:${Math.round(t.accept*100)}%"></i></div></div>
-      <div class="btns">${actionBtns(t.id)}</div>
+      ${controls(t.id)}
     </div>`).join('') : emptyState('No win-win trades surfaced right now.');
 
   renderReport(d.report);
@@ -390,9 +467,125 @@ function renderReport(r){
   </div>`;
   el.innerHTML=html;
 }
-function actionBtns(id){return `<button class="ok" onclick="decide('${id}','approve')">Approve</button><button class="no" onclick="decide('${id}','reject')">Reject</button>`}
 function emptyState(t){return `<div class="empty">${t}</div>`}
-async function decide(id,verb){await fetch('/proposals/'+id+'/'+verb,{method:'POST'});refresh();}
+
+// ── decision controls (status-aware) ───────────────────────────────────────
+function controls(id){
+  const st = STATUSES[id] || 'proposed';
+  if(st==='executed') return `<div class="statusrow"><span class="confirmed-b">✓ confirmed on ESPN</span></div>`;
+  if(st==='approved') return `<div class="statusrow"><span class="followed">✓ Followed</span>
+      <button class="mini" onclick="confirmEspn('${id}')">Verify on ESPN</button>
+      <button class="mini no" onclick="decide('${id}','undo')">Undo</button></div>
+      <div class="verify-out" id="vf-${id}"></div>`;
+  if(st==='rejected') return `<div class="statusrow"><span class="rej">✗ Rejected</span>
+      <button class="mini" onclick="decide('${id}','undo')">Undo</button></div>`;
+  return `<div class="btns"><button class="ok" onclick="decide('${id}','approve')">Approve</button>
+      <button class="no" onclick="decide('${id}','reject')">Reject</button></div>`;
+}
+let _toastTimer=null;
+function showToast(msg, undoId){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  document.getElementById('toast-undo').onclick = async()=>{
+    await fetch('/proposals/'+undoId+'/undo',{method:'POST'}); hideToast(); refresh(); };
+  t.classList.add('show');
+  clearTimeout(_toastTimer); _toastTimer=setTimeout(hideToast, 7000);
+}
+function hideToast(){document.getElementById('toast').classList.remove('show');}
+async function decide(id,verb){
+  if(verb==='undo'){ await fetch('/proposals/'+id+'/undo',{method:'POST'}); hideToast(); return refresh(); }
+  await fetch('/proposals/'+id+'/'+verb,{method:'POST'});
+  await refresh();
+  showToast(verb==='approve'?'Marked as followed — you took the bot’s advice.':'Marked as rejected.', id);
+}
+async function confirmEspn(id){
+  const out=document.getElementById('vf-'+id); if(out) out.textContent='Checking ESPN…';
+  const r=await (await fetch('/proposals/'+id+'/confirm',{method:'POST'})).json();
+  if(out) out.innerHTML=(r.confirmed?'<span style="color:var(--green)">✓ </span>':'<span style="color:var(--amber)">… </span>')+esc(r.detail||'');
+  if(r.confirmed) setTimeout(refresh, 900);
+}
+
+// ── multi-league switcher ──────────────────────────────────────────────────
+async function loadLeagues(){
+  const d=await (await fetch('/api/leagues')).json();
+  LEAGUES=d.leagues||[];
+  if(ACTIVE_LEAGUE==null) ACTIVE_LEAGUE=d.active;
+  renderLeagues();
+}
+function renderLeagues(){
+  document.getElementById('leagues-list').innerHTML = LEAGUES.map(l=>`
+    <div class="lg ${l.league_id==ACTIVE_LEAGUE?'active':''}" onclick="switchLeague(${l.league_id})">
+      <span class="lgdot"></span>
+      <div class="lgmeta"><b>${esc(l.name)}</b><small>${l.season} · team ${l.team_id??'?'}${l.build_status==='building'?' · building…':(l.built?'':' · shell')}</small></div>
+      <span class="x" onclick="event.stopPropagation();removeLeague(${l.league_id})" title="Remove">×</span>
+    </div>`).join('') || '<div class="empty" style="margin:0 10px">No leagues yet.</div>';
+}
+function switchLeague(id){ if(id==ACTIVE_LEAGUE) return; ACTIVE_LEAGUE=id; renderLeagues(); window.scrollTo(0,0); refresh(); }
+function toggleAddForm(){ document.getElementById('addform').classList.toggle('show'); }
+async function addLeague(){
+  const lid=document.getElementById('add-lid').value.trim();
+  const tid=document.getElementById('add-tid').value.trim();
+  const season=document.getElementById('add-season').value.trim();
+  const err=document.getElementById('add-err'); err.textContent='';
+  if(!lid){ err.textContent='League ID is required'; return; }
+  const r=await fetch('/api/leagues',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({league_id:lid,team_id:tid||null,season:season||null})});
+  if(!r.ok){ const j=await r.json().catch(()=>({})); err.textContent=(j.detail||'Could not add league'); return; }
+  document.getElementById('add-lid').value=document.getElementById('add-tid').value=document.getElementById('add-season').value='';
+  toggleAddForm(); await loadLeagues(); switchLeague(parseInt(lid));
+}
+async function removeLeague(id){
+  if(!confirm('Remove this league from your dashboard? (Snapshots are kept.)')) return;
+  await fetch('/api/leagues/'+id,{method:'DELETE'});
+  if(id==ACTIVE_LEAGUE) ACTIVE_LEAGUE=null;
+  await loadLeagues(); refresh();
+}
+async function buildLeague(id){ await fetch('/api/leagues/'+id+'/build',{method:'POST'}); pollBuild(id); }
+function pollBuild(id){
+  document.getElementById('banner').innerHTML=`<div class="banner"><span class="spin"></span><div class="t"><b>Building full analysis…</b> training the model and crunching your league — about a minute.</div></div>`;
+  const iv=setInterval(async()=>{
+    const d=await (await fetch('/api/leagues')).json();
+    const l=(d.leagues||[]).find(x=>x.league_id==id);
+    if(l && l.build_status!=='building'){ clearInterval(iv); await loadLeagues(); refresh(); }
+  }, 2500);
+}
+
+// ── banners + influence ────────────────────────────────────────────────────
+function renderBanner(d){
+  const el=document.getElementById('banner'); const t=(d&&d.team)||{};
+  if(t.build_status==='building'){
+    el.innerHTML=`<div class="banner"><span class="spin"></span><div class="t"><b>Building full analysis…</b> about a minute.</div></div>`; return;
+  }
+  if(t.shell){
+    el.innerHTML=`<div class="banner"><span class="ci">${icon('gauge')}</span>
+      <div class="t"><b>${esc(t.name||'League')}</b> — ${esc(t.status||'shell view (settings only)')}</div>
+      <button class="primary mini" onclick="buildLeague(${t.league_id})">Build full analysis</button></div>`; return;
+  }
+  el.innerHTML='';
+}
+function renderInfluence(inf){
+  const head=document.getElementById('influence-rate'), el=document.getElementById('influence-body');
+  if(!inf || !inf.total){ head.textContent='—';
+    el.innerHTML=emptyState('No decisions tracked yet — approve or reject a recommendation to start the ledger.'); return; }
+  head.textContent = inf.acceptance_rate!=null ? Math.round(inf.acceptance_rate*100)+'% followed' : (inf.total+' tracked');
+  const tiles=[
+    {l:'Followed',v:inf.followed,s:'you took the bot’s advice'},
+    {l:'Confirmed on ESPN',v:inf.confirmed,s:'verified on your roster'},
+    {l:'Rejected',v:inf.rejected,s:'you passed'},
+    {l:'Pending',v:inf.pending,s:'awaiting your call'},
+  ];
+  let html=`<div class="tiles">${tiles.map(t=>`<div class="tile"><div class="tl">${t.l}</div><div class="tv">${t.v}</div><div class="ts">${t.s}</div></div>`).join('')}</div>`;
+  const log=(inf.log||[]).filter(x=>x.status!=='proposed').slice(0,12);
+  if(log.length){
+    html+=`<div class="card"><div class="reason" style="margin:0 0 8px"><b>Your decisions</b> — realized impact accrues as games play (the Report Card shows what following the bot would net).</div>
+      <table><thead><tr><th>Kind</th><th>Recommendation</th><th class="num">Value</th><th>Your call</th></tr></thead><tbody>
+      ${log.map(x=>`<tr><td class="mono" style="color:var(--muted)">${esc(x.kind)}</td><td>${esc(x.title)}</td>
+        <td class="num">${x.value>0?'+':''}${x.value}</td>
+        <td><span class="status ${x.status}">${x.confirmed?'confirmed':x.status}</span></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+  el.innerHTML=html;
+}
 async function analyze(){
   const give=document.getElementById('give').value, get=document.getElementById('get').value;
   const v=document.getElementById('verdict'); v.className='verdict show'; v.innerHTML='Analyzing…';
@@ -402,7 +595,7 @@ async function analyze(){
   v.innerHTML=`<div class="big" style="color:${good?'var(--green)':'var(--red)'}">${good?'Favorable':'Unfavorable'} — ROS VOR ${r.net>0?'+':''}${r.net}</div>
     <div class="reason">Give <b>${esc(give)}</b> (VOR ${r.give_vor}) for <b>${esc(get)}</b> (VOR ${r.get_vor}). Market fairness: ${esc(r.fairness)}.</div>`;
 }
-refresh();
+loadLeagues().then(refresh);
 </script>
 </body>
 </html>

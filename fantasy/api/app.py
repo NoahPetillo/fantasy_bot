@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from pathlib import Path
 
 from fastapi import Body, FastAPI, Form, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 from fantasy.config import ExecutionMode, settings
+from fantasy.leagues import LeagueRef, registry
 from fantasy.orchestrator.models import Proposal, ProposalStatus
 from fantasy.orchestrator.store import Store
 
@@ -31,6 +33,10 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title="Fantasy App", version="0.1.0")
 _store: Store | None = None
+# league_id (str) -> "building" | "done" | "error: ..."
+_build_status: dict[str, str] = {}
+
+registry().seed_default()  # bootstrap the .env league into the registry on first run
 
 
 def store() -> Store:
@@ -89,6 +95,38 @@ def reject(proposal_id: str) -> dict:
     return _decide(proposal_id, False)
 
 
+@app.post("/proposals/{proposal_id}/undo")
+def undo(proposal_id: str) -> dict:
+    """Revert a just-made decision back to 'proposed' (the dashboard's Undo toast).
+    Refuses once an action has actually executed/posted (can't unsend)."""
+    p = store().get(proposal_id)
+    if p is None:
+        raise HTTPException(404, "proposal not found")
+    if p.status == ProposalStatus.executed:
+        return {"id": p.id, "status": p.status.value, "note": "already executed — cannot undo"}
+    store().set_status(p.id, ProposalStatus.proposed)
+    return {"id": p.id, "status": ProposalStatus.proposed.value}
+
+
+@app.post("/proposals/{proposal_id}/confirm")
+def confirm(proposal_id: str) -> dict:
+    """Verify on ESPN that an approved waiver/lineup move actually landed on your
+    roster (you make the move in ESPN; this re-reads and confirms it). Marks the
+    proposal 'executed' once the intended end-state is present."""
+    p = store().get(proposal_id)
+    if p is None:
+        raise HTTPException(404, "proposal not found")
+    from fantasy.api.confirm import confirm_on_espn
+
+    result = confirm_on_espn(p)
+    if result.get("confirmed"):
+        store().set_status(p.id, ProposalStatus.executed)
+        result["status"] = ProposalStatus.executed.value
+    else:
+        result["status"] = p.status.value
+    return {"id": p.id, **result}
+
+
 @app.post("/slack/interactions")
 async def slack_interactions(payload: str = Form(...)) -> dict:
     """Handle Slack Block Kit button clicks (action_id approve_proposal/reject_proposal)."""
@@ -120,16 +158,102 @@ def _fallback_payload() -> dict:
     }
 
 
-@app.get("/api/dashboard")
-def api_dashboard() -> dict:
-    from fantasy.api.dashboard_data import read_snapshot
+# ── multi-league management ──────────────────────────────────────────────────
+def _default_league_id() -> int | None:
+    leagues = registry().all()
+    return leagues[0].league_id if leagues else settings.espn_league_id
 
-    payload = read_snapshot() or _fallback_payload()
-    # Overlay live proposal statuses so approve/reject is reflected on refresh.
+
+@app.get("/api/leagues")
+def api_leagues() -> dict:
+    from fantasy.api.dashboard_data import snapshot_path
+
+    out = []
+    for r in registry().all():
+        built = snapshot_path(r.league_id).exists()
+        out.append({"league_id": r.league_id, "team_id": r.team_id, "season": r.season,
+                    "name": r.name or f"League {r.league_id}", "built": built,
+                    "build_status": _build_status.get(str(r.league_id), "done" if built else "shell")})
+    return {"leagues": out, "active": _default_league_id()}
+
+
+@app.post("/api/leagues")
+def api_add_league(body: dict = Body(...)) -> dict:
+    """Register a league (id + team id + season). Validates against ESPN and writes
+    an instant shell snapshot so it shows up immediately. Heavy analysis is built
+    on demand via /api/leagues/{id}/build."""
+    try:
+        league_id = int(body["league_id"])
+        team_id = int(body["team_id"]) if body.get("team_id") not in (None, "") else None
+        season = int(body.get("season") or settings.espn_season)
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(400, "league_id (and ideally team_id, season) required")
+
+    from fantasy.api.build import build_shell
+
+    ref = registry().add(LeagueRef(league_id=league_id, team_id=team_id, season=season))
+    try:
+        build_shell(ref)  # validates cookies/access + records the league name
+    except Exception as e:  # noqa: BLE001
+        registry().remove(league_id)
+        raise HTTPException(400, f"Couldn't reach that league (check the ID/cookies): {e}")
+    return {"ok": True, "league": next((d for d in api_leagues()["leagues"]
+                                        if d["league_id"] == league_id), None)}
+
+
+@app.delete("/api/leagues/{league_id}")
+def api_remove_league(league_id: int) -> dict:
+    ok = registry().remove(league_id)
+    if not ok:
+        raise HTTPException(404, "league not registered")
+    return {"ok": True, "removed": league_id}
+
+
+def _run_build(league_id: int, week: int | None) -> None:
+    from fantasy.api.build import build_full
+
+    ref = registry().get(league_id)
+    if ref is None:
+        _build_status[str(league_id)] = "error: not registered"
+        return
+    _build_status[str(league_id)] = "building"
+    try:
+        build_full(ref, week=week)
+        _build_status[str(league_id)] = "done"
+    except Exception as e:  # noqa: BLE001
+        log.exception("build failed for %s", league_id)
+        _build_status[str(league_id)] = f"error: {e}"
+
+
+@app.post("/api/leagues/{league_id}/build")
+def api_build_league(league_id: int, week: int | None = None) -> dict:
+    if registry().get(league_id) is None:
+        raise HTTPException(404, "league not registered")
+    if _build_status.get(str(league_id)) == "building":
+        return {"ok": True, "status": "building", "note": "already in progress"}
+    threading.Thread(target=_run_build, args=(league_id, week), daemon=True).start()
+    return {"ok": True, "status": "building"}
+
+
+@app.get("/api/dashboard")
+def api_dashboard(league: int | None = None) -> dict:
+    from fantasy.api.dashboard_data import read_snapshot
+    from fantasy.orchestrator.influence import influence_stats
+
+    league_id = league if league is not None else _default_league_id()
+    payload = read_snapshot(league_id) or _fallback_payload()
+    payload.setdefault("team", {})["build_status"] = _build_status.get(str(league_id), None)
+    # Live status map (id -> status) so every card reflects approve/reject/undo/confirm.
+    t = payload.get("team", {})
+    statuses = {pr.id: pr.status.value for pr in store().list(season=t.get("season"), limit=500)}
+    payload["statuses"] = statuses
     for a in payload.get("actions", []):
-        p = store().get(a.get("id", ""))
-        if p:
-            a["status"] = p.status.value
+        if a.get("id") in statuses:
+            a["status"] = statuses[a["id"]]
+    # Recompute the influence ledger live so counts update the instant a card is decided.
+    if t.get("season") is not None:
+        payload["influence"] = influence_stats(store(), season=t.get("season"),
+                                               team_id=t.get("team_id"))
     return payload
 
 

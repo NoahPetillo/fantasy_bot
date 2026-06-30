@@ -21,18 +21,23 @@ from fantasy.orchestrator.store import Store
 
 log = logging.getLogger(__name__)
 
-SNAPSHOT = settings.data_dir / "dashboard.json"
+
+def snapshot_path(league_id: int | str | None = None) -> "Path":
+    from pathlib import Path
+    if league_id is None:
+        return settings.data_dir / "dashboard.json"
+    return settings.data_dir / f"dashboard_{league_id}.json"
 
 
 def assemble(service, league, store: Store, season: int, week: int, client=None,
-             with_report: bool = True) -> dict:
+             with_report: bool = True, my_team_id: int | None = None) -> dict:
     from fantasy.news.experts.adjust import priority_boosts
     from fantasy.orchestrator.cycle import fetch_expert_signals
 
     espn_proj = client.week_projections(week) if client else None
     fused = fetch_expert_signals()  # corroboration-gated; [] offseason/offline
     board = service.project(season, week, espn_proj=espn_proj, fused_signals=fused)
-    snap = (build_live_snapshot(client, league, season, week) if client
+    snap = (build_live_snapshot(client, league, season, week, my_team_id=my_team_id) if client
             else build_dryrun_snapshot(board, league, season, week))
     rem = service.remaining_weeks(week)
     b = board.set_index("player_id")
@@ -43,8 +48,34 @@ def assemble(service, league, store: Store, season: int, week: int, client=None,
     if settings.prioritize_trades:
         for p in trade_props:
             p.payload["priority"] = True
-    for p in lineup_props + waiver_props + trade_props:
-        store.add(p)
+    lid = getattr(league, "league_id", None)
+
+    def _name(pid):
+        return str(b.loc[pid, "player_display_name"]) if pid in b.index else pid
+
+    def persist(p):
+        """Persist + return the CANONICAL proposal. On a rebuild the same advice has
+        the same idempotency key, so add() is a no-op and we must reference the row
+        already in the store (with its live status) — otherwise the dashboard would
+        link to a fresh id that approve/reject can't find."""
+        if lid is not None:
+            p.payload["league_id"] = lid  # so a later "verify on ESPN" knows the league
+        ids = [p.payload[k] for k in ("add", "drop", "give", "get")
+               if isinstance(p.payload.get(k), str)]
+        ids += p.payload.get("key_fields", {}).get("starters", []) or []
+        if ids:  # names so "verify on ESPN" reads cleanly even for off-roster players
+            p.payload["names"] = {i: _name(i) for i in ids}
+        if store.add(p):
+            return p
+        existing = store.by_key(p.idempotency_key)
+        if existing is None:
+            return p
+        store.merge_payload(existing.id, p.payload)  # keep league_id/priority current
+        return store.get(existing.id) or existing
+
+    lineup_props = [persist(p) for p in lineup_props]
+    waiver_props = [persist(p) for p in waiver_props]
+    trade_props = [persist(p) for p in trade_props]
 
     def nm(pid):
         return b.loc[pid, "player_display_name"] if pid in b.index else pid
@@ -93,6 +124,8 @@ def assemble(service, league, store: Store, season: int, week: int, client=None,
         for r in board.itertuples(index=False)}
 
     report = _report_card(service, league, snap, season, client) if with_report else None
+    from fantasy.orchestrator.influence import influence_stats
+    influence = influence_stats(store, season=season, team_id=snap.my_team_id)
 
     pending = len([a for a in actions if a["status"] == "proposed"])
     kpis = [
@@ -104,11 +137,14 @@ def assemble(service, league, store: Store, season: int, week: int, client=None,
 
     return {
         "team": {"name": snap.team_names.get(snap.my_team_id, "My Team"),
-                 "league": league.summary(), "week": week, "mode": settings.execution_mode.value,
-                 "prioritize_trades": settings.prioritize_trades},
+                 "league": league.summary(), "week": week, "season": season,
+                 "mode": settings.execution_mode.value,
+                 "prioritize_trades": settings.prioritize_trades,
+                 "league_id": getattr(league, "league_id", None), "team_id": snap.my_team_id},
         "kpis": kpis, "waivers": waivers, "trades": trades, "lineup": rows,
         "lineup_total": round(total, 1), "standings": standings, "feed": feed,
         "actions": actions, "board_index": board_index, "report": report,
+        "influence": influence,
     }
 
 
@@ -150,16 +186,49 @@ def _feed(store: Store, fused: list) -> list[dict]:
     return items
 
 
-def write_snapshot(payload: dict) -> None:
-    SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-    SNAPSHOT.write_text(json.dumps(payload))
+def write_snapshot(payload: dict, league_id: int | str | None = None) -> None:
+    p = snapshot_path(league_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(payload))
 
 
-def read_snapshot() -> dict | None:
-    try:
-        return json.loads(SNAPSHOT.read_text())
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return None
+def read_snapshot(league_id: int | str | None = None) -> dict | None:
+    paths = [snapshot_path(league_id)]
+    if league_id is not None:
+        paths.append(snapshot_path(None))  # fall back to the legacy single-league file
+    for p in paths:
+        try:
+            return json.loads(p.read_text())
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def shell_snapshot(client, league, season: int, week: int, my_team_id: int | None) -> dict:
+    """Cheap, instant payload for a freshly-added league: settings, standings, and
+    your roster — no model, no projections. Lets a new (even pre-draft) league show
+    up immediately; the full analysis is built on demand in the background."""
+    standings = _standings(client, my_team_id)
+    me = next((s["team"] for s in standings if s.get("me")), "My Team")
+    drafted = bool(standings) and any(s.get("w", 0) or s.get("l", 0) for s in standings)
+    note = ("Full analysis not built yet — tap “Build analysis”."
+            if drafted else "Season hasn’t started (no draft yet). Settings are loaded; "
+            "build the full analysis once rosters exist.")
+    return {
+        "team": {"name": me, "league": league.summary(), "week": week, "season": season,
+                 "mode": settings.execution_mode.value, "team_id": my_team_id,
+                 "prioritize_trades": settings.prioritize_trades,
+                 "shell": True, "status": note, "league_id": league.league_id},
+        "kpis": [
+            {"label": "League", "value": f"{league.team_count}-team", "sub": league.scoring_format.value},
+            {"label": "Status", "value": "Preseason" if not drafted else "Ready", "sub": "shell view", "accent": True},
+            {"label": "Teams", "value": str(len(standings)), "sub": "in league"},
+            {"label": "Analysis", "value": "—", "sub": "build on demand"},
+        ],
+        "waivers": [], "trades": [], "lineup": [], "lineup_total": 0,
+        "standings": standings, "feed": [], "actions": [], "board_index": {},
+        "report": None, "influence": None,
+    }
 
 
 def analyze_trade(give: str, get: str, board_index: dict) -> dict:

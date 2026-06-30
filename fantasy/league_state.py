@@ -98,12 +98,16 @@ def build_dryrun_snapshot(
     )
 
 
-def build_live_snapshot(client, league: LeagueSettings, season: int, week: int):
+def build_live_snapshot(client, league: LeagueSettings, season: int, week: int,
+                        my_team_id: int | None = None):
     """Build a snapshot from the live ESPN league (needs cookies).
 
     Maps ESPN player ids -> gsis ids via the ff crosswalk so rosters align with
     the projection board (which is keyed by gsis id). Players without a crosswalk
     entry (many K/DST, some rookies) are kept by name but won't have projections.
+
+    ``my_team_id`` selects which team is "mine" (defaults to the configured team) —
+    set explicitly when serving multiple leagues.
     """
     from fantasy.config import settings as app_settings
     from fantasy.data.nfl import load_player_ids
@@ -144,7 +148,7 @@ def build_live_snapshot(client, league: LeagueSettings, season: int, week: int):
 
     return LeagueSnapshot(
         season=season, week=week,
-        my_team_id=app_settings.espn_team_id or (next(iter(teams)) if teams else 1),
+        my_team_id=my_team_id or app_settings.espn_team_id or (next(iter(teams)) if teams else 1),
         teams=teams, free_agents=fas, names=names, positions=positions,
         faab_remaining=faab or {t: league.faab_budget for t in teams}, team_names=team_names,
     )

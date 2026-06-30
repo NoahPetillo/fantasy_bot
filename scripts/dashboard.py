@@ -1,9 +1,11 @@
-"""Build the dashboard snapshot from your real league, then serve it.
+"""Build dashboard snapshots from your registered leagues, then serve.
 
-    uv run python scripts/dashboard.py [week]          # build + serve at :8000
-    uv run python scripts/dashboard.py --build-only 12 # just refresh the snapshot
+    uv run python scripts/dashboard.py [week]               # build all leagues + serve
+    uv run python scripts/dashboard.py --build-only [week]  # just refresh snapshots
+    uv run python scripts/dashboard.py --league 12345 13    # one league, week 13
 
-Open http://127.0.0.1:8000 once it's running.
+Leagues come from data/leagues.json (auto-seeded from your .env on first run);
+add more from the dashboard's "Add League" form. Open http://127.0.0.1:8000.
 """
 
 from __future__ import annotations
@@ -11,35 +13,40 @@ from __future__ import annotations
 import logging
 import sys
 
-from fantasy.api.dashboard_data import assemble, write_snapshot
-from fantasy.config import settings
-from fantasy.espn.client import EspnClient
-from fantasy.orchestrator.store import Store
-from fantasy.projections.service import ProjectionService
+from fantasy.api.build import build_full
+from fantasy.leagues import registry
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-SEASON = 2025
-TRAIN = [2021, 2022, 2023, 2024]
-
-
-def build(week: int) -> None:
-    client = EspnClient(season=SEASON)
-    league = client.league_settings()
-    print(f"League: {league.summary()}\nTraining model + assembling week {week} snapshot...")
-    service = ProjectionService(league).fit(TRAIN)
-    store = Store(settings.db_path)
-    payload = assemble(service, league, store, SEASON, week, client=client)
-    write_snapshot(payload)
-    print(f"✓ Snapshot written: {len(payload['waivers'])} waivers, {len(payload['trades'])} trades, "
-          f"{len(payload['lineup'])} starters, {len(payload['standings'])} teams, "
-          f"{len(payload['feed'])} feed items.")
 
 
 def main() -> int:
-    args = [a for a in sys.argv[1:] if a != "--build-only"]
-    week = int(args[0]) if args else 12
-    build(week)
-    if "--build-only" in sys.argv:
+    argv = sys.argv[1:]
+    build_only = "--build-only" in argv
+    league_id = None
+    if "--league" in argv:
+        i = argv.index("--league")
+        league_id = int(argv[i + 1])
+        del argv[i:i + 2]
+    positional = [a for a in argv if not a.startswith("--")]
+    week = int(positional[0]) if positional else None
+
+    registry().seed_default()
+    refs = [registry().get(league_id)] if league_id is not None else registry().all()
+    refs = [r for r in refs if r]
+    if not refs:
+        print("No leagues registered. Set ESPN_LEAGUE_ID/ESPN_TEAM_ID in .env, or add one in the UI.")
+        return 1
+
+    for ref in refs:
+        print(f"Building league {ref.league_id} (team {ref.team_id}, {ref.season}) ...")
+        try:
+            payload = build_full(ref, week=week)
+            print(f"  ✓ {payload['team']['name']}: {len(payload['waivers'])} waivers, "
+                  f"{len(payload['trades'])} trades, report={'yes' if payload.get('report') else 'no'}.")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ✗ failed: {e}")
+
+    if build_only:
         return 0
     import uvicorn
 

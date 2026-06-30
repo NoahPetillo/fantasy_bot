@@ -72,6 +72,20 @@ class Store:
         except sqlite3.IntegrityError:
             return False  # idempotency_key already present
 
+    def merge_payload(self, proposal_id: str, updates: dict) -> None:
+        """Merge keys into a proposal's payload without touching its status/decision
+        time. Used when a rebuild re-derives a proposal that already exists, to keep
+        fields like ``league_id``/``priority`` current on the canonical row."""
+        with self._lock:
+            r = self.conn.execute("SELECT payload FROM proposals WHERE id=?", (proposal_id,)).fetchone()
+            if not r:
+                return
+            pay = json.loads(r["payload"] or "{}")
+            pay.update(updates)
+            self.conn.execute("UPDATE proposals SET payload=? WHERE id=?",
+                              (json.dumps(pay), proposal_id))
+            self.conn.commit()
+
     def set_status(self, proposal_id: str, status: ProposalStatus, notify_ref: str | None = None):
         from fantasy.orchestrator.models import _now
 
