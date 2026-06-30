@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ROAST BOOK — inside jokes the caption writer sprinkles in occasionally.
+#
+# HOW IT WORKS
+#   • Keyed by ESPN league_id (top level), so each season's league is separate.
+#     The engine auto-loads the block matching your current ESPN_LEAGUE_ID.
+#   • Each manager is keyed by their ESPN FIRST NAME (that's the join to the
+#     league data). Add `nickname:` if the group calls them something else.
+#   • `notes:` is a list — add as many as you want over time; one is picked at a
+#     time. A given person's joke only fires ~1 in CONTENT_ROAST_FREQUENCY of the
+#     moments they star in (default 3 ≈ "every few weeks"), so it stays fresh.
+#
+# NEXT SEASON / NEW LEAGUE
+#   Add a new `"<new_league_id>":` block below with that league's people. To get
+#   the ESPN first names for a league, run:
+#     uv run python -c "from fantasy.espn.client import EspnClient as E; \
+#       print({t.team_id: (t.owners[0].get('firstName')) for t in E().teams()})"
+# ─────────────────────────────────────────────────────────────────────────────
+
+leagues:
+
+  # ── 2025 league ──
+  "1893434977":
+    managers:
+      - name: Cam
+        notes:
+          - "Once skipped the draft because he 'had to hang out with friends' — now 'sorry, gotta hang with friends (fuck you Cam)' is a permanent bit."
+      - name: Anthony
+        notes:
+          - "Somehow makes the finals every single year and won't let anyone forget it. Pathetic."
+      - name: Noah
+        notes:
+          - "Knows absolutely nothing about fantasy — polls the entire group for advice before making a single move of his own."
+      - name: Nick
+        notes:
+          - "Was a catastrophically bad commissioner and got overthrown by the tyrant-dictator commish regime (Anthony and Declan)."
+      - name: Declan
+        notes:
+          - "Genuinely solid manager. Also a tyrant commissioner."
+      - name: Andrew
+        notes:
+          - "Finished dead last and STILL hasn't done his punishment."
+      - name: James
+        nickname: Stone
+        notes:
+          - "Brags about championships he hasn't won in years — and the one he did win, nobody actually cared about fantasy yet, so it doesn't count."
+      - name: Aidan
+        notes:
+          - "Inexplicably obsessed with the Tony brothers. Work it in if you can find an angle."
+          - "ALWAYS gets so lucky — wins games he has absolutely no business winning."
+      - name: Joey
+        notes:
+          - "Howlingly bad at fantasy — fleeced in a trade the day after the draft two years running. Swears he's 'him.' He is not him."
+      - name: Ethan
+        notes:
+          - "Has a freakishly enormous big toe."
+      - name: Brady
+        notes:
+          - "NEVER responds in the group chat. Quietly a good manager, but we genuinely forget he exists half the time."
+      - name: Adam
+        notes:
+          - "Just bad. Trades constantly and loses basically all of them despite having a good team."
+
+  # ── 2026 league (TODO: add the new league's id + people here next season) ──
+  # "<new_league_id>":
+  #   managers:
+  #     - name: SomeFirstName
+  #       notes:
+  #         - "their inside joke"

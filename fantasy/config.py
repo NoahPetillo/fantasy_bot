@@ -13,7 +13,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,11 +58,16 @@ class Settings(BaseSettings):
 
     # ── LLM ──
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
-    # Groq (the inference provider, key prefix `gsk_` — not to be confused with
-    # xAI's Grok). Fast OpenAI-compatible inference for open models; powers the
-    # chatbot's free-form Q&A when set (preferred over Anthropic, then the keyless parser).
+    # Groq (NOTE: Groq the inference provider, key prefix `gsk_` — NOT xAI's Grok
+    # below). Fast OpenAI-compatible inference for open models; powers the chatbot's
+    # free-form Q&A when set (preferred over Anthropic, then the keyless parser).
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    # xAI / Grok — OpenAI-compatible alternative caption provider. Accepts either
+    # XAI_API_KEY or GROK_API_KEY in the environment.
+    xai_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("XAI_API_KEY", "GROK_API_KEY")
+    )
 
     # ── Player props (the-odds-api.com; optional, the sharpest projection source) ──
     odds_api_key: str | None = Field(default=None, alias="ODDS_API_KEY")
@@ -90,9 +95,26 @@ class Settings(BaseSettings):
     content_nailbiter_margin: float = Field(default=5.0, alias="CONTENT_NAILBITER_MARGIN")
     content_blowout_margin: float = Field(default=40.0, alias="CONTENT_BLOWOUT_MARGIN")
     content_bench_blunder_min: float = Field(default=8.0, alias="CONTENT_BENCH_BLUNDER_MIN")
-    # Caption tone: "group_chat" (casual, emojis, no hashtags) or "instagram" (+hashtags).
+    # Caption LLM provider: "auto" (use whichever key is set — prefers Groq, then
+    # xAI/Grok, then Anthropic), or force "groq" | "xai"/"grok" | "anthropic".
+    # content_llm_model overrides the per-provider default (groq -> GROQ_MODEL,
+    # xai -> grok-4.3, anthropic -> claude-haiku-4-5).
+    content_llm_provider: str = Field(default="auto", alias="CONTENT_LLM_PROVIDER")
+    content_llm_model: str | None = Field(default=None, alias="CONTENT_LLM_MODEL")
+    # Caption tone: "group_chat" (savage, profane friend-group trash talk — the
+    # default) or "instagram" (cocky but public-safe, +hashtags).
     content_voice: str = Field(default="group_chat", alias="CONTENT_VOICE")
     content_league_name: str | None = Field(default=None, alias="CONTENT_LEAGUE_NAME")
+    # Optional one-line ALWAYS-ON vibe note woven into every caption prompt
+    # (e.g. "extra mean, lots of swearing"). Per-person inside jokes go in the
+    # roast book (config/roasts.yaml), not here.
+    content_style_note: str | None = Field(default=None, alias="CONTENT_STYLE_NOTE")
+    # Roast book: per-league inside jokes sprinkled in occasionally.
+    content_roasts_file: Path = Field(default=Path("config/roasts.yaml"),
+                                      alias="CONTENT_ROASTS_FILE")
+    # A manager's inside joke fires roughly 1-in-N of the moments they star in
+    # (3 ≈ "every few weeks"). Lower = more often, higher = rarer.
+    content_roast_frequency: int = Field(default=3, alias="CONTENT_ROAST_FREQUENCY")
     # Phase 2 moment tuning.
     content_streak_min: int = Field(default=3, alias="CONTENT_STREAK_MIN")  # min W/L run to flag
     content_min_faab_bid: int = Field(default=15, alias="CONTENT_MIN_FAAB_BID")  # min $ to flag

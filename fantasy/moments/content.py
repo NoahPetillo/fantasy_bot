@@ -22,7 +22,9 @@ from fantasy.moments.models import Moment, MomentType
 
 log = logging.getLogger(__name__)
 
-MODEL = "claude-haiku-4-5-20251001"  # matches fantasy/news/extract.py
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"  # matches fantasy/news/extract.py
+XAI_MODEL = "grok-4.3"                          # xAI's recommended fast model
+_XAI_URL = "https://api.x.ai/v1/chat/completions"
 
 _ACCENT = {
     MomentType.nailbiter: "#ff5d3b",
@@ -59,46 +61,148 @@ _LABEL = {
 
 # ── caption ──────────────────────────────────────────────────────────────────
 def write_caption(moment: Moment) -> str:
-    """A short, punchy caption. LLM if a key is configured, else a clean template."""
-    if not settings.anthropic_api_key:
-        return _fallback_caption(moment)
-    try:
-        from anthropic import Anthropic
+    """A short, punchy caption. LLM if a provider key is configured, else a template."""
+    return _llm_caption(_caption_prompt(moment)) or _fallback_caption(moment)
 
-        client = Anthropic(api_key=settings.anthropic_api_key)
-        resp = client.messages.create(
-            model=MODEL, max_tokens=180,
-            messages=[{"role": "user", "content": _caption_prompt(moment)}],
-        )
-        text = "".join(
-            getattr(b, "text", "") for b in resp.content if getattr(b, "type", None) == "text"
-        ).strip()
-        return text or _fallback_caption(moment)
+
+def _resolve_provider() -> tuple[str | None, str | None, str | None]:
+    """(provider, model, api_key) per config; (None, None, None) if no key available.
+
+    ``auto`` prefers Groq (generous free tier — what the rest of the app prefers),
+    then xAI/Grok, then Anthropic. ``content_llm_model`` overrides any default.
+    """
+    prov = (settings.content_llm_provider or "auto").strip().lower()
+    if prov == "grok":
+        prov = "xai"
+    override = settings.content_llm_model
+    table = {  # provider -> (api_key, default_model)
+        "groq": (settings.groq_api_key, override or settings.groq_model),
+        "xai": (settings.xai_api_key, override or XAI_MODEL),
+        "anthropic": (settings.anthropic_api_key, override or ANTHROPIC_MODEL),
+    }
+    if prov in table:
+        key, model = table[prov]
+        return (prov, model, key) if key else (None, None, None)
+    if prov == "auto":
+        for p in ("groq", "xai", "anthropic"):
+            key, model = table[p]
+            if key:
+                return p, model, key
+    return None, None, None
+
+
+def _llm_caption(prompt: str) -> str | None:
+    provider, model, key = _resolve_provider()
+    if not provider:
+        return None
+    try:
+        if provider == "groq":
+            return _groq_complete(prompt, model, key)
+        if provider == "xai":
+            return _xai_complete(prompt, model, key)
+        return _anthropic_complete(prompt, model, key)
     except Exception as e:  # noqa: BLE001
-        log.warning("Caption LLM failed (%s); falling back to template.", e)
-        return _fallback_caption(moment)
+        log.warning("Caption LLM (%s) failed (%s); falling back to template.", provider, e)
+        return None
+
+
+def _groq_complete(prompt: str, model: str, key: str) -> str | None:
+    from groq import Groq  # official SDK (same path the chat agent uses)
+
+    resp = Groq(api_key=key).chat.completions.create(
+        model=model, max_tokens=300, temperature=1.0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return (resp.choices[0].message.content or "").strip() or None
+
+
+def _anthropic_complete(prompt: str, model: str, key: str) -> str | None:
+    from anthropic import Anthropic
+
+    resp = Anthropic(api_key=key).messages.create(
+        model=model, max_tokens=200, messages=[{"role": "user", "content": prompt}]
+    )
+    return "".join(
+        getattr(b, "text", "") for b in resp.content if getattr(b, "type", None) == "text"
+    ).strip() or None
+
+
+def _xai_complete(prompt: str, model: str, key: str) -> str | None:
+    import requests
+
+    resp = requests.post(
+        _XAI_URL,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"model": model, "max_tokens": 200, "temperature": 1.0,
+              "messages": [{"role": "user", "content": prompt}]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    choices = (resp.json() or {}).get("choices") or []
+    return (choices[0]["message"]["content"].strip() if choices else None) or None
 
 
 def _caption_prompt(moment: Moment) -> str:
-    league = settings.content_league_name or "our fantasy league"
-    voice = (
-        "Write 1–2 sentences of playful, savage group-chat trash talk. Emojis are great. "
-        "Do NOT use hashtags."
-        if settings.content_voice != "instagram"
-        else "Write a punchy Instagram caption (1–2 sentences) with a little trash talk, "
-        "then 3–5 relevant hashtags on a new line."
-    )
+    from fantasy.moments.roasts import roast_for
+
+    league = settings.content_league_name or "the league"
+    style = (settings.content_style_note or "").strip()
+    roast = roast_for(moment.manager, moment.week)
+    who = f"\nCALL THIS PERSON OUT BY NAME: {moment.manager}" if moment.manager else ""
+    if settings.content_voice == "instagram":
+        voice = (
+            "Write a cocky, punchy Instagram caption (1–2 sentences) with playful trash talk, then "
+            "3–5 hashtags on a new line. Keep it edgy but public-friendly — no hard profanity.")
+    else:  # group_chat = savage (default)
+        voice = (
+            "Write 1–2 sentences of savage, sarcastic group-chat trash talk in the voice of a tight "
+            "friend group that mercilessly busts each other's balls over fantasy football. Be crude, "
+            "profane and specific — swearing (shit/fuck/etc.) is encouraged. Channel lines like "
+            "\"this team was fucking vile this week\" or \"that start/sit was laughable, fuck you "
+            "{name}\". No hashtags, no corny hype-bot energy, and don't explain the joke.")
+    guard = (
+        "This is affectionate ball-busting between friends — roast their garbage fantasy decisions "
+        "as hard as you want, but NO slurs and no bigotry; never attack anyone's race, gender, "
+        "religion, or the like. Keep it about their terrible team.")
+    extra = f"\nOVERALL GROUP VIBE: {style}" if style else ""
+    joke = (f"\nINSIDE JOKE TO WORK IN (land it naturally, don't force it): {roast}"
+            if roast else "")
     return (
-        f"You are the smack-talking commissioner-bot for {league}. {voice}\n"
-        f"Use ONLY these facts — do not invent any names or numbers, and keep names/scores exact:\n"
-        f"FACTS: {moment.blurb}\n"
+        f"You are the resident shit-talker for {league}. {voice}\n{guard}{extra}{joke}\n"
+        f"Use ONLY these facts — keep all names and numbers exact, invent nothing:\n"
+        f"FACTS: {moment.blurb}{who}\n"
         f"Return only the caption text, nothing else."
     )
 
 
+# Savage templated kickers for when no LLM key is configured — edgier than a bare
+# restatement, but the LLM is where the real venom lives.
+def _savage_kicker(moment: Moment) -> str:
+    n = moment.manager
+    callout = f"fuck you, {n}" if n else "just laughable"
+    named = f"{n}, " if n else ""
+    return {
+        MomentType.nailbiter: f"{named}you nearly shit the bed on that one.",
+        MomentType.blowout: f"that wasn't a game, it was a public execution. {named}embarrassing.",
+        MomentType.high_score: "alright, flex on the poors, we get it.",
+        MomentType.low_score: f"genuinely vile. {named}that lineup belongs in a dumpster.",
+        MomentType.bench_blunder: f"a clinic in coaching malpractice — {callout}.",
+        MomentType.lucky: f"backed into a W like the absolute fraud {n or 'they are'}.",
+        MomentType.unlucky: f"dropped a ton and still lost. {named}the schedule has it out for you, lmao.",
+        MomentType.boom: "went nuclear. cute pickup you'll fumble away next week.",
+        MomentType.bust: f"laid a colossal egg — {callout}.",
+        MomentType.hot_streak: "on a heater. enjoy it before the inevitable collapse.",
+        MomentType.cold_streak: f"in total free fall. {named}it's getting hard to watch.",
+        MomentType.rivalry: "rivalry settled — somebody go talk their shit.",
+        MomentType.trade: "a trade?! in this economy of cowards? somebody finally grew a pair.",
+        MomentType.waiver: f"dropped real money on a waiver. {named}better not be a damn kicker.",
+    }.get(moment.type, "woof.")
+
+
 def _fallback_caption(moment: Moment) -> str:
+    from fantasy.moments.roasts import roast_for
+
     emoji = _EMOJI.get(moment.type, "🔥")
-    base = f"{emoji} {moment.blurb}"
     if settings.content_voice == "instagram":
         tags = {
             MomentType.nailbiter: "#nailbiter #fantasyfootball #closegame",
@@ -108,9 +212,16 @@ def _fallback_caption(moment: Moment) -> str:
             MomentType.lucky: "#luckywin #fantasyfootball #scheduleluck",
             MomentType.boom: "#boom #fantasyfootball #league",
             MomentType.bust: "#bust #fantasyfootball #benchhim",
+            MomentType.hot_streak: "#hotstreak #fantasyfootball #rolling",
+            MomentType.cold_streak: "#coldstreak #fantasyfootball #freefall",
+            MomentType.rivalry: "#rivalry #fantasyfootball #badblood",
+            MomentType.trade: "#trade #fantasyfootball #blockbuster",
+            MomentType.waiver: "#waivers #faab #fantasyfootball",
         }.get(moment.type, "#fantasyfootball #league")
-        return f"{base}\n{tags}"
-    return base
+        return f"{emoji} {moment.blurb}\n{tags}"
+    roast = roast_for(moment.manager, moment.week)
+    tail = f" {roast}" if roast else ""
+    return f"{emoji} {moment.blurb} {_savage_kicker(moment)}{tail}"
 
 
 # ── graphic ──────────────────────────────────────────────────────────────────

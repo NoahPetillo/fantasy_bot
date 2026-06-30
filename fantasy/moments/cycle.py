@@ -90,6 +90,27 @@ def _teams(client) -> list:
         return []
 
 
+def _manager_map(teams) -> dict[int, str]:
+    """team_id -> manager first name (from ESPN owners), for roasting by name."""
+    out: dict[int, str] = {}
+    for t in teams or []:
+        tid = getattr(t, "team_id", None)
+        for o in getattr(t, "owners", []) or []:
+            fn = (o.get("firstName") if isinstance(o, dict) else "") or ""
+            if tid is not None and fn.strip():
+                out[tid] = fn.strip()
+                break
+    return out
+
+
+def _enrich_managers(moments: list[Moment], teams: list) -> list[Moment]:
+    mgrs = _manager_map(teams)
+    for m in moments:
+        if m.manager is None and m.team_id is not None:
+            m.manager = mgrs.get(m.team_id)
+    return moments
+
+
 def content_cycle(client, season: int, week: int, store: Store | None = None,
                   notifier=None, per_week: int | None = None, generate: bool = True,
                   recap_week: int | None = None) -> list[Proposal]:
@@ -104,6 +125,7 @@ def content_cycle(client, season: int, week: int, store: Store | None = None,
     if teams:
         moments += detect_streaks(teams, season, resolved_week, min_len=settings.content_streak_min)
         moments += detect_rivalries(teams, season, resolved_week, settings.content_rivalries)
+    _enrich_managers(moments, teams)
 
     store = store or Store()
     fresh = _emit(moments, store, notifier, per_week, generate)
@@ -126,6 +148,7 @@ def activity_cycle(client, season: int, store: Store | None = None, notifier=Non
 
     moments = detect_trades(activities, season)
     moments += detect_waivers(activities, season, min_bid=settings.content_min_faab_bid)
+    _enrich_managers(moments, _teams(client))
     store = store or Store()
     fresh = _emit(moments, store, notifier, per_scan, generate)
     log.info("Activity cycle: %d activities, %d moments, %d new.",

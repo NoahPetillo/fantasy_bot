@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from fantasy.moments import content
+import pytest
+
+from fantasy.moments import content, roasts
 from fantasy.moments.activity import detect_trades, detect_waivers
 from fantasy.moments.content import write_caption
 from fantasy.moments.cycle import activity_cycle, content_cycle
@@ -18,6 +20,17 @@ from fantasy.moments.score import rank_and_select
 from fantasy.moments.standings import detect_rivalries, detect_streaks
 from fantasy.orchestrator.models import ProposalKind
 from fantasy.orchestrator.store import Store
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch):
+    # Never let real .env LLM keys leak into tests (no live API calls).
+    monkeypatch.setattr(content.settings, "anthropic_api_key", None)
+    monkeypatch.setattr(content.settings, "xai_api_key", None)
+    monkeypatch.setattr(content.settings, "groq_api_key", None)
+    roasts.reset_cache()
+    yield
+    roasts.reset_cache()
 
 
 def _player(name, pts, slot, proj=0.0, eligible=None, pid=None):
@@ -147,8 +160,13 @@ def test_per_matchup_cap_limits_angles_on_same_game():
 
 
 # ── caption fallback (no LLM) ──────────────────────────────────────────────────
-def test_caption_fallback_without_key(monkeypatch):
+def _no_llm(monkeypatch):
     monkeypatch.setattr(content.settings, "anthropic_api_key", None)
+    monkeypatch.setattr(content.settings, "xai_api_key", None)
+
+
+def test_caption_fallback_without_key(monkeypatch):
+    _no_llm(monkeypatch)
     monkeypatch.setattr(content.settings, "content_voice", "group_chat")
     m = Moment(type=MomentType.nailbiter, season=2025, week=7,
                headline="Alpha survives Bravo by 2.0",
@@ -159,11 +177,126 @@ def test_caption_fallback_without_key(monkeypatch):
 
 
 def test_caption_fallback_instagram_adds_hashtags(monkeypatch):
-    monkeypatch.setattr(content.settings, "anthropic_api_key", None)
+    _no_llm(monkeypatch)
     monkeypatch.setattr(content.settings, "content_voice", "instagram")
     m = Moment(type=MomentType.blowout, season=2025, week=7, headline="h",
                blurb="Charlie blew out Delta.", spice=88)
-    assert "#" in write_caption(m)
+    cap = write_caption(m)
+    assert "#" in cap and "fuck" not in cap.lower()   # public-safe
+
+
+def test_savage_fallback_roasts_by_name(monkeypatch):
+    _no_llm(monkeypatch)
+    monkeypatch.setattr(content.settings, "content_voice", "group_chat")
+    m = Moment(type=MomentType.bench_blunder, season=2025, week=7,
+               headline="h", blurb="Nick benched a stud.", spice=90, team_id=1, manager="Nick")
+    cap = write_caption(m).lower()
+    assert "nick" in cap            # called out by name
+    assert "fuck" in cap            # savage voice has teeth
+    assert "#" not in cap           # group chat = no hashtags
+
+
+# ── caption LLM provider (Groq / xAI-Grok / Anthropic) ─────────────────────────
+def test_provider_auto_prefers_groq(monkeypatch):
+    monkeypatch.setattr(content.settings, "content_llm_provider", "auto")
+    monkeypatch.setattr(content.settings, "groq_api_key", "gsk_key")
+    monkeypatch.setattr(content.settings, "xai_api_key", "xai-key")
+    monkeypatch.setattr(content.settings, "anthropic_api_key", "anth-key")
+    monkeypatch.setattr(content.settings, "content_llm_model", None)
+    monkeypatch.setattr(content.settings, "groq_model", "llama-3.3-70b-versatile")
+    prov, model, key = content._resolve_provider()
+    assert prov == "groq" and key == "gsk_key" and model == "llama-3.3-70b-versatile"
+
+
+def test_provider_auto_chain_xai_then_anthropic(monkeypatch):
+    # No groq key -> xAI wins over Anthropic.
+    monkeypatch.setattr(content.settings, "content_llm_provider", "auto")
+    monkeypatch.setattr(content.settings, "xai_api_key", "xai-key")
+    monkeypatch.setattr(content.settings, "anthropic_api_key", "anth-key")
+    prov, model, _ = content._resolve_provider()
+    assert prov == "xai" and "grok" in model.lower()
+
+
+def test_explicit_provider_without_key_yields_none(monkeypatch):
+    monkeypatch.setattr(content.settings, "content_llm_provider", "anthropic")
+    monkeypatch.setattr(content.settings, "groq_api_key", "gsk_key")   # present but not selected
+    assert content._resolve_provider() == (None, None, None)
+
+
+def test_model_override_respected(monkeypatch):
+    monkeypatch.setattr(content.settings, "content_llm_provider", "groq")
+    monkeypatch.setattr(content.settings, "groq_api_key", "gsk_key")
+    monkeypatch.setattr(content.settings, "content_llm_model", "openai/gpt-oss-120b")
+    prov, model, _ = content._resolve_provider()
+    assert prov == "groq" and model == "openai/gpt-oss-120b"
+
+
+def test_write_caption_routes_to_groq(monkeypatch):
+    monkeypatch.setattr(content.settings, "content_llm_provider", "auto")
+    monkeypatch.setattr(content.settings, "groq_api_key", "gsk_key")
+    monkeypatch.setattr(content, "_groq_complete", lambda prompt, model, key: "GROQ SAYS YOU SUCK")
+    m = Moment(type=MomentType.blowout, season=2025, week=1, headline="h", blurb="b", spice=80)
+    assert write_caption(m) == "GROQ SAYS YOU SUCK"
+
+
+def test_manager_enrichment_from_owners(tmp_path):
+    from fantasy.moments.cycle import _enrich_managers
+    A = SimpleNamespace(team_id=1, team_name="A", team_abbrev="A",
+                        owners=[{"firstName": "Nick", "lastName": "V"}])
+    m = Moment(type=MomentType.low_score, season=2025, week=3, headline="h", blurb="b",
+               spice=40, team_id=1)
+    _enrich_managers([m], [A])
+    assert m.manager == "Nick"
+
+
+# ── roast book (per-league inside jokes, occasional) ───────────────────────────
+def _roast_file(tmp_path, league_id="999"):
+    p = tmp_path / "roasts.yaml"
+    p.write_text(
+        f'leagues:\n  "{league_id}":\n    managers:\n'
+        '      - name: Cam\n        notes:\n          - "skipped the draft to hang with friends"\n'
+        '      - name: James\n        nickname: Stone\n        notes:\n'
+        '          - "brags about old championships"\n'
+    )
+    return p
+
+
+def _point_at(monkeypatch, path, league_id=999, freq=1):
+    monkeypatch.setattr(roasts.settings, "content_roasts_file", path)
+    monkeypatch.setattr(roasts.settings, "espn_league_id", league_id)
+    monkeypatch.setattr(roasts.settings, "content_roast_frequency", freq)
+    roasts.reset_cache()
+
+
+def test_roast_fires_for_known_manager(monkeypatch, tmp_path):
+    _point_at(monkeypatch, _roast_file(tmp_path), freq=1)
+    assert "skipped the draft" in (roasts.roast_for("Cam", 5) or "")
+
+
+def test_roast_uses_nickname(monkeypatch, tmp_path):
+    _point_at(monkeypatch, _roast_file(tmp_path), freq=1)
+    out = roasts.roast_for("James", 3) or ""
+    assert "Stone" in out and "championships" in out
+
+
+def test_roast_is_occasional_not_every_week(monkeypatch, tmp_path):
+    _point_at(monkeypatch, _roast_file(tmp_path), freq=3)
+    fires = [w for w in range(1, 31) if roasts.roast_for("Cam", w)]
+    assert 0 < len(fires) < 30          # shows up sometimes, not every week
+
+
+def test_roast_none_for_unknown_manager_or_league(monkeypatch, tmp_path):
+    p = _roast_file(tmp_path)
+    _point_at(monkeypatch, p, league_id=999, freq=1)
+    assert roasts.roast_for("Nobody", 5) is None
+    monkeypatch.setattr(roasts.settings, "espn_league_id", 424242)  # no block
+    roasts.reset_cache()
+    assert roasts.roast_for("Cam", 5) is None
+
+
+def test_roast_graceful_without_file(monkeypatch, tmp_path):
+    _point_at(monkeypatch, tmp_path / "does_not_exist.yaml", freq=1)
+    assert roasts.roast_for("Cam", 5) is None
 
 
 # ── full cycle: proposals + idempotency ────────────────────────────────────────

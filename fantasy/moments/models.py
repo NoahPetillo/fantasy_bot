@@ -49,6 +49,7 @@ class Moment:
 
     # Subject / dedup / proposal routing
     team_id: int | None = None  # the team the moment is "about" (proposal.team_id)
+    manager: str | None = None  # first name of the subject team's manager (for roasting by name)
     dedup_key: str = ""         # stable identity within (kind, season, week)
 
     # Scoreboard fields (matchup moments)
