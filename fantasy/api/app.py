@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from fantasy.config import ExecutionMode, settings
 from fantasy.leagues import LeagueRef, registry
-from fantasy.orchestrator.models import Proposal, ProposalStatus
+from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
 
 _STATIC = Path(__file__).resolve().parent / "static" / "dashboard.html"
@@ -47,8 +47,19 @@ def store() -> Store:
 
 
 def on_approved(p: Proposal) -> None:
-    """Execution hook (Phase 3). In advise mode this is a no-op; in approve/auto
-    mode it runs the swappable executor under the idempotency guard."""
+    """Execution hook. Moments post to the group chat on approval (not an ESPN
+    write, so it runs in any mode). ESPN actions stay gated by execution_mode:
+    a no-op in advise mode, the swappable executor otherwise."""
+    if p.kind == ProposalKind.moment:
+        from fantasy.moments.publisher import publish_moment
+
+        ref = publish_moment(p)
+        if ref:
+            store().set_status(p.id, ProposalStatus.executed, ref)
+            log.info("Posted moment %s -> %s", p.id, ref)
+        else:
+            log.warning("Moment %s approved but post failed (check DISCORD_WEBHOOK_URL).", p.id)
+        return
     if settings.execution_mode == ExecutionMode.advise:
         log.info("[advise] approved %s (%s) — no write performed.", p.id, p.title)
         return

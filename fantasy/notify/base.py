@@ -6,7 +6,7 @@ from typing import Protocol
 
 from fantasy.orchestrator.models import Proposal
 
-_ICON = {"start_sit": "🪑", "waiver": "➕", "trade": "🔁", "alert": "📰"}
+_ICON = {"start_sit": "🪑", "waiver": "➕", "trade": "🔁", "alert": "📰", "moment": "🔥"}
 
 
 def render_text(p: Proposal) -> str:

@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- 1080×1080 square moment card. Rendered to PNG by Playwright (content.py).
+     All text is real text (never model-generated) so scores/names are exact. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1080px; }
+      body {
+        font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: #fff;
+        background:
+          radial-gradient(1200px 700px at 80% -10%, {{ accent }}55, transparent 60%),
+          linear-gradient(160deg, #0c0f1a 0%, #131a2b 55%, #0a0d16 100%);
+        display: flex; flex-direction: column;
+        padding: 84px 80px;
+        position: relative; overflow: hidden;
+      }
+      .glow { position: absolute; width: 620px; height: 620px; border-radius: 50%;
+        background: {{ accent }}; filter: blur(180px); opacity: .22;
+        bottom: -240px; left: -180px; }
+      .top { display: flex; justify-content: space-between; align-items: center;
+        font-size: 30px; letter-spacing: .22em; text-transform: uppercase;
+        color: #aeb6c9; font-weight: 700; z-index: 2; }
+      .pill { background: {{ accent }}; color: #0a0d16; padding: 10px 22px;
+        border-radius: 999px; font-size: 26px; letter-spacing: .12em; }
+      .headline { margin-top: 56px; font-size: 78px; line-height: 1.04;
+        font-weight: 800; letter-spacing: -.015em; z-index: 2; max-width: 920px; }
+      .spacer { flex: 1; }
+      .board { display: flex; align-items: stretch; gap: 28px; z-index: 2; }
+      .side { flex: 1; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+        border-radius: 28px; padding: 40px 44px; }
+      .side.win { border-color: {{ accent }}; background: {{ accent }}1f; }
+      .side .name { font-size: 40px; font-weight: 700; color: #e7ecf6;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .side .pts { font-size: 116px; font-weight: 800; letter-spacing: -.03em; margin-top: 8px; }
+      .vs { align-self: center; font-size: 40px; font-weight: 800; color: #8b93a7; }
+      .stat { z-index: 2; }
+      .stat .big { font-size: 168px; font-weight: 800; letter-spacing: -.04em; color: {{ accent }}; }
+      .stat .sub { font-size: 46px; font-weight: 700; color: #e7ecf6; margin-top: 6px; }
+      .lines { z-index: 2; display: flex; flex-direction: column; gap: 26px; }
+      .line { font-size: 50px; font-weight: 700; color: #e7ecf6; line-height: 1.15;
+        padding-left: 28px; border-left: 8px solid {{ accent }}; }
+      .blurb { margin-top: 40px; font-size: 34px; line-height: 1.34; color: #c7cedd;
+        max-width: 960px; z-index: 2; }
+    </style>
+  </head>
+  <body>
+    <div class="glow"></div>
+    <div class="top">
+      <span>{{ period }}{% if league %} · {{ league }}{% endif %}</span>
+      <span class="pill">{{ type_label }}</span>
+    </div>
+
+    <div class="headline">{{ headline }}</div>
+    <div class="spacer"></div>
+
+    {% if score_b is not none %}
+    <div class="board">
+      <div class="side {% if (score_a or 0) >= (score_b or 0) %}win{% endif %}">
+        <div class="name">{{ team_a }}</div>
+        <div class="pts">{{ '%.1f'|format(score_a) }}</div>
+      </div>
+      <div class="vs">vs</div>
+      <div class="side {% if (score_b or 0) > (score_a or 0) %}win{% endif %}">
+        <div class="name">{{ team_b }}</div>
+        <div class="pts">{{ '%.1f'|format(score_b) }}</div>
+      </div>
+    </div>
+    {% elif big_stat %}
+    <div class="stat">
+      <div class="big">{{ big_stat }}</div>
+      {% if player %}<div class="sub">{{ player }}{% if player_team %} · {{ player_team }}{% endif %}</div>
+      {% elif team_a %}<div class="sub">{{ team_a }}</div>{% endif %}
+    </div>
+    {% elif lines %}
+    <div class="lines">
+      {% for ln in lines %}<div class="line">{{ ln }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if blurb and not lines %}<div class="blurb">{{ blurb }}</div>{% endif %}
+  </body>
+</html>

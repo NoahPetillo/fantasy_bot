@@ -76,6 +76,25 @@ class Settings(BaseSettings):
     slack_channel_id: str | None = Field(default=None, alias="SLACK_CHANNEL_ID")
     ntfy_topic: str | None = Field(default=None, alias="NTFY_TOPIC")
 
+    # ── Content engine (league hype posts) ──
+    # Where approved moments get posted. A Discord channel webhook URL is the
+    # whole setup — no bot, no OAuth. (Instagram is deliberately NOT automated:
+    # the engine produces a ready-to-post image you upload to IG by hand.)
+    discord_webhook_url: str | None = Field(default=None, alias="DISCORD_WEBHOOK_URL")
+    content_moments_per_week: int = Field(default=3, alias="CONTENT_MOMENTS_PER_WEEK")
+    content_nailbiter_margin: float = Field(default=5.0, alias="CONTENT_NAILBITER_MARGIN")
+    content_blowout_margin: float = Field(default=40.0, alias="CONTENT_BLOWOUT_MARGIN")
+    content_bench_blunder_min: float = Field(default=8.0, alias="CONTENT_BENCH_BLUNDER_MIN")
+    # Caption tone: "group_chat" (casual, emojis, no hashtags) or "instagram" (+hashtags).
+    content_voice: str = Field(default="group_chat", alias="CONTENT_VOICE")
+    content_league_name: str | None = Field(default=None, alias="CONTENT_LEAGUE_NAME")
+    # Phase 2 moment tuning.
+    content_streak_min: int = Field(default=3, alias="CONTENT_STREAK_MIN")  # min W/L run to flag
+    content_min_faab_bid: int = Field(default=15, alias="CONTENT_MIN_FAAB_BID")  # min $ to flag
+    # Rivalry pairs — list of [tokenA, tokenB], each token a team name/abbrev/id.
+    # e.g. CONTENT_RIVALRIES='[["Maye shots","Emeka the Freaka"],["6","9"]]'
+    content_rivalries: list[list[str]] | None = Field(default=None, alias="CONTENT_RIVALRIES")
+
     # ── Runtime ──
     execution_mode: ExecutionMode = Field(default=ExecutionMode.advise, alias="EXECUTION_MODE")
     execution_backend: ExecutionBackend = Field(
@@ -114,6 +133,13 @@ class Settings(BaseSettings):
     def db_path(self) -> Path:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return self.data_dir / "fantasy.sqlite"
+
+    @property
+    def media_dir(self) -> Path:
+        """Where generated moment graphics are written (and read for posting)."""
+        d = self.data_dir / "media"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
 
 settings = Settings()

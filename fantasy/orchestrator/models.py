@@ -22,6 +22,7 @@ class ProposalKind(str, Enum):
     waiver = "waiver"
     trade = "trade"
     alert = "alert"  # news/injury heads-up, no action to approve
+    moment = "moment"  # league hype content awaiting approve-to-post (content engine)
 
 
 class ProposalStatus(str, Enum):

@@ -30,6 +30,9 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "apscheduler>=3.10.4",
     "jinja2>=3.1.4",
+    # Content engine: graphic rendering fallback (Playwright is the optional
+    # high-fidelity renderer; Pillow guarantees an image without a browser).
+    "pillow>=10.4.0",
     # Config / models
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",

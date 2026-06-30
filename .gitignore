@@ -21,6 +21,9 @@ models/*.pkl
 models/*.json
 models/*.ubj
 
+# Claude Code local state (machine-specific permission cache)
+.claude/settings.local.json
+
 # OS / editor
 .DS_Store
 .ipynb_checkpoints/

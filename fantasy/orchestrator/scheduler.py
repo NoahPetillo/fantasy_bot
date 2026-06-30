@@ -79,6 +79,33 @@ class Orchestrator:
         snap = self._snapshot(season, week, board)
         return news_cycle(snap, store=self.store, notifier=self.notifier)
 
+    def content_now(self):
+        """Scan the just-finished week for hype-worthy moments → approve-to-post.
+
+        Needs box scores, so it's a no-op without a live ESPN client (cookies).
+        """
+        if self.client is None:
+            log.info("Content scan skipped: no ESPN client (box scores need cookies).")
+            return []
+        from fantasy.moments.cycle import content_cycle
+
+        season, week = self._season_week()
+        return content_cycle(self.client, season, week, store=self.store, notifier=self.notifier)
+
+    def activity_now(self):
+        """Scan the transaction feed for completed trades + notable FAAB pickups.
+
+        No-op without a live client; the feed itself is current-season only and
+        degrades gracefully off-season.
+        """
+        if self.client is None:
+            log.info("Activity scan skipped: no ESPN client (needs cookies).")
+            return []
+        from fantasy.moments.cycle import activity_cycle
+
+        season, _ = self._season_week()
+        return activity_cycle(self.client, season, store=self.store, notifier=self.notifier)
+
     def start(self):
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
@@ -94,7 +121,14 @@ class Orchestrator:
         # News/injury scan every 30 min (tighten to ~5 min pre-kickoff later).
         sched.add_job(self.news_now, CronTrigger(minute="*/30"),
                       id="news_scan", replace_existing=True)
+        # League content recap: Tue 10am ET, after MNF + stat corrections settle.
+        sched.add_job(self.content_now, CronTrigger(day_of_week="tue", hour=10),
+                      id="content_scan", replace_existing=True)
+        # Transaction feed (trades/waivers): every 6h — trades lag the review window
+        # anyway, so there's no point polling faster.
+        sched.add_job(self.activity_now, CronTrigger(hour="*/6"),
+                      id="content_activity_scan", replace_existing=True)
         sched.start()
         log.info("Scheduler started: news(30m), trade(daily 9am), waiver(Tue 8pm), "
-                 "lineup(Thu/Sun/Mon 11am) ET")
+                 "lineup(Thu/Sun/Mon 11am), content(Tue 10am), activity(every 6h) ET")
         return sched
