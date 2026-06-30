@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gridiron — Fantasy Command</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0a0f1c; --panel:#111a2e; --panel-2:#0e1626; --line:rgba(255,255,255,.08);
+    --line-strong:rgba(255,255,255,.14); --text:#e6edf7; --muted:#93a2bd; --faint:#5f6f8c;
+    --blue:#3b82f6; --blue-dim:#1e40af; --amber:#f59e0b; --green:#22c55e; --red:#ef4444;
+    --violet:#8b5cf6; --radius:14px; --mono:'Fira Code',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,rgba(59,130,246,.10),transparent 60%),var(--bg);
+    color:var(--text);font-family:'Fira Sans',system-ui,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:var(--mono)}
+  .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+
+  /* Sidebar */
+  .side{position:sticky;top:0;height:100vh;background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:6px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--blue),var(--violet));
+    display:grid;place-items:center;box-shadow:0 0 18px rgba(59,130,246,.5)}
+  .brand b{font-size:16px;letter-spacing:.2px}
+  .brand small{display:block;color:var(--faint);font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase}
+  .nav a{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:var(--muted);
+    font-size:14px;cursor:pointer;transition:background .18s,color .18s;border:1px solid transparent}
+  .nav a:hover{background:rgba(255,255,255,.04);color:var(--text)}
+  .nav a.active{background:rgba(59,130,246,.14);color:#fff;border-color:rgba(59,130,246,.35)}
+  .nav svg{width:18px;height:18px;flex:0 0 18px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .side .spacer{flex:1}
+  .botcard{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(255,255,255,.02)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);display:inline-block}
+
+  /* Main */
+  .main{padding:24px 30px 60px;max-width:1400px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+  .topbar h1{font-size:21px;margin:0;font-weight:600}
+  .topbar .sub{color:var(--muted);font-size:13px}
+  .pill{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.8px;padding:5px 10px;
+    border-radius:999px;border:1px solid var(--line-strong);color:var(--muted)}
+  .pill.amber{color:var(--amber);border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08)}
+
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .kpi{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 18px}
+  .kpi .label{color:var(--muted);font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px}
+  .kpi .val{font-size:28px;font-weight:600;margin-top:6px;font-family:var(--mono)}
+  .kpi .sub{color:var(--faint);font-size:12px;margin-top:2px}
+  .kpi.accent{border-color:rgba(59,130,246,.35)}
+
+  section{margin-bottom:30px;scroll-margin-top:18px}
+  .sec-head{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+  .sec-head h2{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+  .sec-head .count{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .sec-head .ico{width:18px;height:18px;stroke:var(--blue);fill:none;stroke-width:1.8}
+
+  .grid{display:grid;gap:14px}
+  .cols-2{grid-template-columns:1fr 1fr}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px}
+  .card.click{cursor:pointer;transition:border-color .18s,transform .18s,box-shadow .18s}
+  .card.click:hover{border-color:var(--line-strong);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+
+  .move{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:14px;margin-bottom:8px;flex-wrap:wrap}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.6px;text-transform:uppercase;padding:3px 8px;border-radius:6px}
+  .tag.add{color:var(--green);background:rgba(34,197,94,.12)}
+  .tag.drop{color:var(--red);background:rgba(239,68,68,.12)}
+  .tag.pos{color:var(--muted);background:rgba(255,255,255,.05)}
+  .arrow{color:var(--faint)}
+  .reason{color:var(--muted);font-size:13px;margin:4px 0 12px}
+  .meta{display:flex;gap:14px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px}
+  .meta b{color:var(--text)}
+  .bar{height:6px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden;flex:1;min-width:80px}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green))}
+
+  .btns{display:flex;gap:8px}
+  button{font-family:'Fira Sans';font-size:13px;border-radius:9px;padding:8px 14px;cursor:pointer;
+    border:1px solid var(--line-strong);background:rgba(255,255,255,.03);color:var(--text);
+    transition:background .18s,border-color .18s}
+  button:hover{background:rgba(255,255,255,.07)}
+  button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  button.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);color:#bbf7d0}
+  button.ok:hover{background:rgba(34,197,94,.22)}
+  button.no{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35);color:#fecaca}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+  button.primary:hover{background:#2f6fe0}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;color:var(--faint);font-family:var(--mono);font-size:11px;text-transform:uppercase;
+    letter-spacing:.6px;font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line)}
+  tr{transition:background .15s}
+  tbody tr:hover{background:rgba(255,255,255,.03)}
+  td.num,th.num{text-align:right;font-family:var(--mono)}
+  .me{color:var(--amber);font-weight:600}
+
+  .slot{font-family:var(--mono);font-size:11px;color:var(--blue);width:46px;display:inline-block}
+  .range{font-family:var(--mono);font-size:12px;color:var(--faint)}
+
+  .feed-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .feed-item:last-child{border-bottom:none}
+  .feed-ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:0 0 30px;background:rgba(255,255,255,.04)}
+  .feed-ico svg{width:16px;height:16px;stroke-width:1.8;fill:none}
+  .badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:5px}
+  .badge.go{color:#bbf7d0;background:rgba(34,197,94,.14)}
+  .badge.alert{color:#fde68a;background:rgba(245,158,11,.12)}
+
+  .field{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+  .field label{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+  input[type=text]{background:var(--panel-2);border:1px solid var(--line-strong);border-radius:9px;color:var(--text);
+    padding:9px 12px;font-family:var(--mono);font-size:13px;min-width:200px}
+  input:focus{outline:none;border-color:var(--blue)}
+  .verdict{margin-top:14px;padding:14px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.02);display:none}
+  .verdict.show{display:block}
+  .verdict .big{font-size:20px;font-weight:600;font-family:var(--mono)}
+
+  .empty{color:var(--faint);font-size:13px;padding:18px;text-align:center;border:1px dashed var(--line);border-radius:11px}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:2px 8px;border-radius:5px;border:1px solid var(--line)}
+  .status.proposed{color:var(--amber)} .status.approved{color:var(--green)} .status.rejected{color:var(--red)}
+
+  /* Trade priority + report card */
+  .badge.star{color:var(--amber);background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.4)}
+  .card.priority{border-color:rgba(245,158,11,.45);box-shadow:0 0 0 1px rgba(245,158,11,.15) inset}
+  .callout{display:flex;gap:12px;align-items:flex-start;border:1px solid rgba(245,158,11,.35);
+    background:linear-gradient(180deg,rgba(245,158,11,.08),rgba(245,158,11,.02));border-radius:12px;
+    padding:13px 15px;margin-bottom:14px}
+  .callout .ci{flex:0 0 22px;color:var(--amber)}.callout svg{width:22px;height:22px;stroke:var(--amber);fill:none;stroke-width:1.8}
+  .callout b{color:var(--text)}.callout .t{font-size:13.5px;color:var(--muted)}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .tile{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+  .tile .tl{color:var(--faint);font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.7px}
+  .tile .tv{font-size:22px;font-weight:600;font-family:var(--mono);margin-top:5px}
+  .tile .ts{color:var(--muted);font-size:11.5px;margin-top:2px}
+  .pos-v{color:var(--green)}.neg-v{color:var(--red)}
+  @media (max-width:1000px){.app{grid-template-columns:1fr}.side{display:none}.kpis{grid-template-columns:1fr 1fr}
+    .cols-2{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="logo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="1.8"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4z"/><path d="M9 12l2 2 4-4"/></svg></span>
+      <div><b>Gridiron</b><small>Fantasy Command</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#trades" class="active" data-icon="swap">Trades</a>
+      <a href="#report" data-icon="trend">Report Card</a>
+      <a href="#waivers" data-icon="plus">Waivers</a>
+      <a href="#analyzer" data-icon="scale">Trade Analyzer</a>
+      <a href="#lineup" data-icon="users">Start / Sit</a>
+      <a href="#standings" data-icon="trophy">Standings</a>
+      <a href="#feed" data-icon="rss">News &amp; Experts</a>
+      <a href="#actions" data-icon="list">Action Log</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="botcard">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="dot"></span><b id="botname">Bot online</b></div>
+      <div class="mono" style="color:var(--faint);font-size:11px;margin-top:6px" id="botmode">mode: advise</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="teamname">Loading…</h1>
+        <div class="sub" id="leaguesub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="pill amber" id="weekpill">WEEK —</span>
+        <span class="pill" id="modepill">ADVISE</span>
+        <button class="primary" onclick="refresh()">Refresh</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <section id="trades">
+      <div class="sec-head" data-sec-icon="swap"><h2>Proposed Trades</h2><span class="count" id="trades-n">0</span>
+        <span class="badge star" id="trades-priority" style="display:none">★ your biggest edge</span></div>
+      <div id="trades-banner"></div>
+      <div class="grid cols-2" id="trades-list"></div>
+    </section>
+
+    <section id="report">
+      <div class="sec-head" data-sec-icon="trend"><h2>Season Report Card</h2><span class="count" id="report-season">—</span></div>
+      <div id="report-body"><div class="empty">Report card builds from your finished season (run scripts/dashboard.py).</div></div>
+    </section>
+
+    <section id="waivers">
+      <div class="sec-head" data-sec-icon="plus"><h2>This Week's Best Waiver Claims</h2><span class="count" id="waivers-n">0</span></div>
+      <div class="grid cols-2" id="waivers-list"></div>
+    </section>
+
+    <section id="analyzer">
+      <div class="sec-head" data-sec-icon="scale"><h2>Trade Analyzer</h2></div>
+      <div class="card">
+        <div class="field">
+          <div><label>You give (player)</label><input type="text" id="give" placeholder="e.g. George Kittle" /></div>
+          <div><label>You get (player)</label><input type="text" id="get" placeholder="e.g. Jonathan Taylor" /></div>
+          <button class="primary" onclick="analyze()">Analyze</button>
+        </div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+    </section>
+
+    <section id="lineup">
+      <div class="sec-head" data-sec-icon="users"><h2>Optimal Start / Sit</h2><span class="count" id="lineup-pts">—</span></div>
+      <div class="card"><table><thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num">Proj</th><th class="num">Floor–Ceiling</th></tr></thead><tbody id="lineup-rows"></tbody></table></div>
+    </section>
+
+    <section id="standings">
+      <div class="sec-head" data-sec-icon="trophy"><h2>League Standings</h2></div>
+      <div class="card"><table><thead><tr><th>#</th><th>Team</th><th class="num">W</th><th class="num">L</th><th class="num">PF</th></tr></thead><tbody id="standings-rows"></tbody></table></div>
+    </section>
+
+    <section id="feed">
+      <div class="sec-head" data-sec-icon="rss"><h2>News & Expert Signals</h2><span class="count" id="feed-n">0</span></div>
+      <div class="card" id="feed-list"></div>
+    </section>
+
+    <section id="actions">
+      <div class="sec-head" data-sec-icon="list"><h2>Action Log</h2></div>
+      <div class="card"><table><thead><tr><th>Kind</th><th>Title</th><th class="num">Value</th><th>Status</th></tr></thead><tbody id="actions-rows"></tbody></table></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const I = {
+  grid:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  swap:'<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
+  scale:'<path d="M12 3v18M5 7h14M5 7l-2 6a4 4 0 0 0 8 0l-2-6M19 7l-2 6a4 4 0 0 0 8 0l-2-6"/>',
+  users:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/>',
+  trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 3M16 6h3a3 3 0 0 1-3 3M10 17h4M9 21h6M12 13v4"/>',
+  rss:'<path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5"/>',
+  list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  alert:'<path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+  trend:'<path d="M3 17l6-6 4 4 7-7M14 8h7v7"/>',
+};
+function icon(n){return `<svg viewBox="0 0 24 24">${I[n]||''}</svg>`}
+function secIcon(n){return `<svg class="ico" viewBox="0 0 24 24">${I[n]||''}</svg>`}
+// Populate sidebar + section icons from data attributes (robust, no DOM rewrite).
+document.querySelectorAll('[data-icon]').forEach(el=>el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+document.querySelectorAll('[data-sec-icon]').forEach(el=>el.insertAdjacentHTML('afterbegin', secIcon(el.dataset.secIcon)));
+// Scroll-spy: highlight active nav link.
+const navLinks=[...document.querySelectorAll('.nav a')];
+addEventListener('scroll',()=>{let cur=navLinks[0];
+  for(const a of navLinks){const s=document.querySelector(a.getAttribute('href'));
+    if(s&&s.getBoundingClientRect().top<160)cur=a;}
+  navLinks.forEach(a=>a.classList.toggle('active',a===cur));},{passive:true});
+
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+async function refresh(){
+  const d = await (await fetch('/api/dashboard')).json();
+  document.getElementById('teamname').textContent = d.team.name;
+  document.getElementById('leaguesub').textContent = d.team.league;
+  document.getElementById('weekpill').textContent = 'WEEK '+d.team.week;
+  document.getElementById('modepill').textContent = (d.team.mode||'advise').toUpperCase();
+  document.getElementById('botmode').textContent = 'mode: '+(d.team.mode||'advise');
+  document.getElementById('botname').textContent = d.team.name;
+
+  document.getElementById('kpis').innerHTML = d.kpis.map(k=>`
+    <div class="kpi ${k.accent?'accent':''}"><div class="label">${esc(k.label)}</div>
+    <div class="val">${esc(k.value)}</div><div class="sub">${esc(k.sub||'')}</div></div>`).join('');
+
+  // Waivers
+  document.getElementById('waivers-n').textContent = d.waivers.length;
+  document.getElementById('waivers-list').innerHTML = d.waivers.length ? d.waivers.map(w=>`
+    <div class="card">
+      <div class="move"><span class="tag add">+ ADD</span><b>${esc(w.add)}</b><span class="tag pos">${esc(w.pos||'')}</span>
+        <span class="arrow">→</span><span class="tag drop">− DROP</span>${esc(w.drop)}</div>
+      <div class="reason">${esc(w.reason)}</div>
+      <div class="meta"><span>${w.bid!=null?('FAAB <b>$'+w.bid+'</b>'):'<b>waiver claim</b>'}</span>
+        <span>ROS value <b>+${w.value}</b></span><div class="bar"><i style="width:${Math.min(100,(w.conf||.6)*100)}%"></i></div></div>
+      <div class="btns">${actionBtns(w.id)}</div>
+    </div>`).join('') : emptyState('No waiver upgrades — your bench is solid.');
+
+  // Trades (this manager's biggest edge — surfaced first + flagged)
+  document.getElementById('trades-n').textContent = d.trades.length;
+  document.getElementById('trades-priority').style.display = (d.team.prioritize_trades) ? '' : 'none';
+  document.getElementById('trades-banner').innerHTML = tradeBanner(d);
+  document.getElementById('trades-list').innerHTML = d.trades.length ? d.trades.map(t=>`
+    <div class="card ${t.priority?'priority':''}">
+      <div class="move"><b>${esc(t.give)}</b><span class="arrow">⇄</span><b>${esc(t.get)}</b>
+        ${t.priority?'<span class="badge star">★ priority</span>':''}</div>
+      <div class="reason">${esc(t.reason)}</div>
+      <div class="meta"><span>your gain <b>+${t.my_gain}</b></span><span>accept <b>${Math.round(t.accept*100)}%</b></span>
+        <div class="bar"><i style="width:${Math.round(t.accept*100)}%"></i></div></div>
+      <div class="btns">${actionBtns(t.id)}</div>
+    </div>`).join('') : emptyState('No win-win trades surfaced right now.');
+
+  renderReport(d.report);
+
+  // Lineup
+  document.getElementById('lineup-pts').textContent = (d.lineup_total||0).toFixed(0)+' proj';
+  document.getElementById('lineup-rows').innerHTML = d.lineup.map(p=>`
+    <tr><td><span class="slot">${esc(p.slot)}</span></td><td>${esc(p.name)}</td><td class="mono" style="color:var(--muted)">${esc(p.pos)}</td>
+    <td class="num"><b>${p.proj}</b></td><td class="num range">${p.floor}–${p.ceiling}</td></tr>`).join('')
+    || `<tr><td colspan="5" class="empty">No lineup yet.</td></tr>`;
+
+  // Standings
+  document.getElementById('standings-rows').innerHTML = d.standings.map(s=>`
+    <tr><td class="mono">${s.rank}</td><td class="${s.me?'me':''}">${esc(s.team)}</td>
+    <td class="num">${s.w}</td><td class="num">${s.l}</td><td class="num">${s.pf}</td></tr>`).join('')
+    || `<tr><td colspan="5" class="empty">Standings unavailable.</td></tr>`;
+
+  // Feed
+  document.getElementById('feed-n').textContent = d.feed.length;
+  document.getElementById('feed-list').innerHTML = d.feed.length ? d.feed.map(f=>`
+    <div class="feed-item">
+      <div class="feed-ico">${icon(f.corroborated?'trend':'alert')}</div>
+      <div style="flex:1">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <b>${esc(f.title)}</b>
+          <span class="badge ${f.corroborated?'go':'alert'}">${f.corroborated?'corroborated':'alert-only'}</span>
+        </div>
+        <div class="reason" style="margin:2px 0 0">${esc(f.detail)}</div>
+      </div>
+    </div>`).join('') : emptyState('No fresh news/expert signals (offseason).');
+
+  // Actions
+  document.getElementById('actions-rows').innerHTML = d.actions.map(a=>`
+    <tr><td class="mono" style="color:var(--muted)">${esc(a.kind)}</td><td>${esc(a.title)}</td>
+    <td class="num">${a.value>0?'+':''}${a.value}</td><td><span class="status ${a.status}">${a.status}</span></td></tr>`).join('')
+    || `<tr><td colspan="4" class="empty">No actions logged yet.</td></tr>`;
+}
+function sv(x){const n=Number(x);return `<span class="${n>=0?'pos-v':'neg-v'}">${n>=0?'+':''}${n.toFixed(0)}</span>`}
+function tradeBanner(d){
+  const r=d.report; if(!r||!d.team.prioritize_trades) return '';
+  const mt=r.model_trades||{};
+  if(r.trades_made===0 && mt.n){
+    return `<div class="callout"><span class="ci">${icon('trend')}</span><div class="t">
+      <b>The trade market is your biggest edge.</b> You made <b>0 trades</b> last season while the league made
+      <b>${r.league_trades}</b>. The model's best weekly offer would have landed positive
+      <b>${Math.round(mt.win_rate*mt.n)}/${mt.n}</b> times (mean ${sv(mt.mean)}, best ${sv(mt.best)} pts).
+      That's why trades are pinned to the top.</div></div>`;
+  }
+  return '';
+}
+function renderReport(r){
+  const el=document.getElementById('report-body');
+  if(!r){el.innerHTML=`<div class="empty">Report card builds from your finished season (run scripts/dashboard.py).</div>`;return;}
+  document.getElementById('report-season').textContent=`${r.season} · wk1–${r.reg_end}`;
+  const w=r.waiver||{}, ss=r.startsit||{}, mss=(ss.model||{}), mt=r.model_trades||{};
+  const tiles=[
+    {l:'Trades made',v:String(r.trades_made),s:`league made ${r.league_trades}`},
+    {l:'Waiver value (started)',v:sv(w.skill_started||0),s:'skill RB/WR/TE/QB'},
+    {l:'Model start/sit',v:sv(mss.total_gain||0),s:`vs your lineups (~${(mss.avg_per_week>=0?'+':'')}${(mss.avg_per_week||0)}/wk)`},
+    {l:'Best model trade',v:mt.best!=null?sv(mt.best):'—',s:mt.best_trade?`wk${mt.best_trade.week} ${esc(mt.best_trade.get)}`:'—'},
+  ];
+  let html=`<div class="tiles">${tiles.map(t=>`<div class="tile"><div class="tl">${t.l}</div>
+    <div class="tv">${t.v}</div><div class="ts">${t.s}</div></div>`).join('')}</div>`;
+
+  // Model's would-be trades
+  if(mt.weeks&&mt.weeks.length){
+    html+=`<div class="card" style="margin-bottom:14px"><div class="reason" style="margin:0 0 8px">
+      <b>Trades the model would have proposed</b> — realized regular-season outcome
+      (positive ${Math.round(mt.win_rate*mt.n)}/${mt.n}, mean ${sv(mt.mean)} pts):</div>
+      <table><thead><tr><th>Wk</th><th>Send</th><th>Get</th><th class="num">Accept</th><th class="num">Realized</th></tr></thead><tbody>
+      ${mt.weeks.map(t=>`<tr><td class="mono">${t.week}</td><td>${esc(t.give)}</td><td>${esc(t.get)}</td>
+        <td class="num">${Math.round(t.accept*100)}%</td><td class="num">${sv(t.realized)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  // Start/sit + waiver summary
+  const worst=(ss.weeks||[]).filter(x=>x.biggest&&x.left>=8).sort((a,b)=>b.left-a.left).slice(0,3);
+  html+=`<div class="grid cols-2">
+    <div class="card"><div class="reason" style="margin:0 0 8px"><b>Start / Sit</b></div>
+      <div class="meta" style="margin-bottom:6px"><span>following the model would have ${(mss.total_gain||0)>=0?'gained':'cost'} you
+        <b>${Math.abs(mss.total_gain||0).toFixed(0)}</b> realized pts</span></div>
+      <div class="ts" style="color:var(--faint);font-size:12px;margin-bottom:8px">Hindsight ceiling: ${(ss.total_left_on_bench||0).toFixed(0)} pts left on bench (~${ss.avg_per_week}/wk; nobody hits the ceiling).</div>
+      ${worst.map(x=>`<div class="reason" style="margin:2px 0">Wk ${x.week}: start <b>${esc(x.biggest.bench)}</b> (${x.biggest.bench_pts}) over ${esc(x.biggest.over)} (${x.biggest.over_pts}) — ${sv(x.biggest.gain)}</div>`).join('')||'<div class="ts">No major start/sit misses.</div>'}
+    </div>
+    <div class="card"><div class="reason" style="margin:0 0 8px"><b>Waivers</b></div>
+      <div class="meta" style="margin-bottom:6px"><span>skill (started) ${sv(w.skill_started||0)}</span><span>streaming ${sv(w.stream_started||0)}</span></div>
+      <div class="ts" style="color:var(--faint);font-size:12px">Asset totals: skill ${sv(w.skill_asset||0)}, streaming ${sv(w.stream_asset||0)} pts (much of streaming sat on the bench).</div>
+    </div>
+  </div>`;
+  el.innerHTML=html;
+}
+function actionBtns(id){return `<button class="ok" onclick="decide('${id}','approve')">Approve</button><button class="no" onclick="decide('${id}','reject')">Reject</button>`}
+function emptyState(t){return `<div class="empty">${t}</div>`}
+async function decide(id,verb){await fetch('/proposals/'+id+'/'+verb,{method:'POST'});refresh();}
+async function analyze(){
+  const give=document.getElementById('give').value, get=document.getElementById('get').value;
+  const v=document.getElementById('verdict'); v.className='verdict show'; v.innerHTML='Analyzing…';
+  const r=await (await fetch('/api/analyze-trade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({give,get})})).json();
+  if(r.error){v.innerHTML=`<span style="color:var(--red)">${esc(r.error)}</span>`;return;}
+  const good=r.net>=0;
+  v.innerHTML=`<div class="big" style="color:${good?'var(--green)':'var(--red)'}">${good?'Favorable':'Unfavorable'} — ROS VOR ${r.net>0?'+':''}${r.net}</div>
+    <div class="reason">Give <b>${esc(give)}</b> (VOR ${r.give_vor}) for <b>${esc(get)}</b> (VOR ${r.get_vor}). Market fairness: ${esc(r.fairness)}.</div>`;
+}
+refresh();
+</script>
+</body>
+</html>

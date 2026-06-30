@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.uv/
+
+# Secrets & local config
+.env
+config/league.yaml
+*.secret
+
+# Data / model artifacts (regenerable, can be large)
+data/
+!data/.gitkeep
+*.parquet
+*.sqlite
+*.sqlite3
+*.db
+models/*.pkl
+models/*.json
+models/*.ubj
+
+# OS / editor
+.DS_Store
+.ipynb_checkpoints/
+.idea/
+.vscode/
+
+# Playwright
+/test-results/
+/playwright-report/

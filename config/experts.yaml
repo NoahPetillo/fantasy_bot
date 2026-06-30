@@ -1,0 +1,43 @@
+# Curated fantasy-football expert registry (the differentiator's seed list).
+# Edit freely — loaded at runtime, no code change needed. `outlet` is what counts
+# for independence (two analysts at the same outlet are NOT independent sources).
+# bsky_handle null = not on Bluesky / unverified (the X adapter, if enabled, covers it).
+# Group D (data scientists) are used as TOOLS (nflverse/ffopportunity), not tweet feeds.
+
+experts:
+  # ── Group A: news breakers (injuries / inactives / transactions) ──
+  - {name: Adam Schefter,   x_handle: AdamSchefter,  bsky_handle: null,                  outlet: ESPN,         group: breaker, tier: 1, base_trust: 0.95, specialties: [injury, transaction]}
+  - {name: Ian Rapoport,    x_handle: RapSheet,      bsky_handle: rapsheet.bsky.social,  outlet: NFLNetwork,   group: breaker, tier: 1, base_trust: 0.95, specialties: [injury, transaction]}
+  - {name: Tom Pelissero,   x_handle: TomPelissero,  bsky_handle: null,                  outlet: NFLNetwork,   group: breaker, tier: 1, base_trust: 0.90, specialties: [injury, practice]}
+  - {name: Mike Garafolo,   x_handle: MikeGarafolo,  bsky_handle: null,                  outlet: NFLNetwork,   group: breaker, tier: 1, base_trust: 0.88, specialties: [injury, practice]}
+  - {name: Field Yates,     x_handle: FieldYates,    bsky_handle: null,                  outlet: ESPN,         group: breaker, tier: 1, base_trust: 0.88, specialties: [waiver, injury]}
+
+  # ── Group B: medical / return-timeline ──
+  - {name: Stephania Bell,  x_handle: Stephania_ESPN, bsky_handle: null,                 outlet: ESPN,         group: medical, tier: 1, base_trust: 0.90, specialties: [injury]}
+  - {name: Jeff Mueller DPT, x_handle: jmthrivept,   bsky_handle: null,                  outlet: Independent,  group: medical, tier: 2, base_trust: 0.72, specialties: [injury]}
+  - {name: David Chao MD,   x_handle: ProFootballDoc, bsky_handle: null,                 outlet: SIC,          group: medical, tier: 2, base_trust: 0.65, specialties: [injury]}
+
+  # ── Group C: waiver / FAAB / opportunity-trend ──
+  - {name: Hayden Winks,    x_handle: HaydenWinks,   bsky_handle: null,                  outlet: Underdog,     group: waiver,  tier: 1, base_trust: 0.82, specialties: [waiver, usage_change, breakout]}
+  - {name: Graham Barfield, x_handle: GrahamBarfield, bsky_handle: null,                 outlet: FantasyPoints, group: waiver, tier: 1, base_trust: 0.82, specialties: [usage_change, breakout]}
+  - {name: JJ Zachariason,  x_handle: LateRoundQB,   bsky_handle: null,                  outlet: Independent,  group: waiver,  tier: 1, base_trust: 0.82, specialties: [waiver]}
+  - {name: Ben Gretch,      x_handle: YardsPerGretch, bsky_handle: null,                 outlet: Independent,  group: waiver,  tier: 1, base_trust: 0.82, specialties: [usage_change]}
+  - {name: Mike Clay,       x_handle: MikeClayNFL,   bsky_handle: null,                  outlet: ESPN,         group: waiver,  tier: 1, base_trust: 0.85, specialties: [usage_change]}
+  - {name: Scott Barrett,   x_handle: ScottBarrettDFB, bsky_handle: null,                outlet: FantasyPoints, group: waiver, tier: 2, base_trust: 0.80, specialties: [usage_change, breakout]}
+  - {name: Rich Hribar,     x_handle: LordReebs,     bsky_handle: null,                  outlet: Sharp,        group: waiver,  tier: 2, base_trust: 0.78, specialties: [waiver]}
+
+  # ── Group E: proven winners / accuracy anchors (calibration seeds) ──
+  - {name: Justin Boone,    x_handle: justinboone,   bsky_handle: null,                  outlet: Yahoo,        group: winner,  tier: 1, base_trust: 0.85, specialties: [ranking]}
+  - {name: Jeff Ratcliffe,  x_handle: JeffRatcliffe, bsky_handle: null,                  outlet: FantasyPoints, group: winner, tier: 1, base_trust: 0.85, specialties: [ranking]}
+  - {name: Sean Koerner,    x_handle: The_Oddsmaker, bsky_handle: null,                  outlet: Action,       group: winner,  tier: 1, base_trust: 0.85, specialties: [ranking, projection]}
+
+# Free RSS feeds (no auth, no cost). outlet for independence counting.
+rss_feeds:
+  - {name: ESPN NFL News, url: "https://www.espn.com/espn/rss/nfl/news", outlet: ESPN, base_trust: 0.72}
+  - {name: ProFootballTalk, url: "https://profootballtalk.nbcsports.com/feed/", outlet: PFT, base_trust: 0.70}
+  - {name: CBS Sports NFL, url: "https://www.cbssports.com/rss/headlines/nfl/", outlet: CBS, base_trust: 0.68}
+
+# Group D data-science TOOLS (used programmatically elsewhere, listed for provenance).
+data_tools:
+  - {name: nflverse, who: "Ben Baldwin / Sebastian Carl", use: "nflreadpy weekly stats, EPA, snaps"}
+  - {name: ffopportunity, who: "Tan Ho / Joe Sydlowski", use: "expected fantasy points (xFP)"}
