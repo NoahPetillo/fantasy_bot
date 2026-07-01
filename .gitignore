@@ -10,9 +10,12 @@ __pycache__/
 config/league.yaml
 *.secret
 
-# Data / model artifacts (regenerable, can be large)
-data/
-!data/.gitkeep
+# Data / model artifacts (regenerable, can be large). Anchored to the repo root
+# with a leading slash so it ONLY ignores the top-level runtime data/ dir and does
+# NOT match the fantasy/data/ source package — the unanchored form dropped
+# fantasy/data from the built wheel and crashed the container on startup.
+/data/
+!/data/.gitkeep
 *.parquet
 *.sqlite
 *.sqlite3
