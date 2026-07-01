@@ -93,8 +93,12 @@ def record_auth_success(db: Session, user: User) -> None:
 
 def record_auth_failure(db: Session, user: User) -> bool:
     """Increment the failure counter; auto-purge past the threshold. Returns True
-    if the credentials were purged."""
-    c = get_credential(db, user)
+    if the credentials were purged.
+
+    Locks the row (``with_for_update``) so two concurrent failing requests can't
+    both increment/purge the same credential (no-op on SQLite, which serializes
+    writes anyway)."""
+    c = db.get(EspnCredential, user.id, with_for_update=True)
     if not c:
         return False
     c.failure_count += 1

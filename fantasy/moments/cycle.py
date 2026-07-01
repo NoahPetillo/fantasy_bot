@@ -17,7 +17,7 @@ import logging
 
 from fantasy.moments.config import content_config as settings  # decoupled from the app
 from fantasy.moments.activity import detect_trades, detect_waivers
-from fantasy.moments.content import render_card, write_caption
+from fantasy.moments.content import card_header, render_card, write_caption
 from fantasy.moments.detector import detect_moments
 from fantasy.moments.models import Moment
 from fantasy.moments.score import rank_and_select
@@ -86,8 +86,9 @@ def _emit(moments: list[Moment], store: Store, notifier, per_week: int | None,
             continue  # already raised
         if generate:
             caption = write_caption(m)
-            img = render_card(m)
+            img = render_card(m, caption=caption)  # caption is baked onto the image
             p.payload["caption"] = caption
+            p.payload["header"] = card_header(m)
             p.payload["image_path"] = str(img) if img else None
             p.detail = caption + (f"\n\n🖼  Image ready: {img}" if img else "\n\n(caption only)")
         if store.add(p):

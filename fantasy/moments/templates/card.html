@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- 1080×1080 square moment card. Rendered to PNG by Playwright (content.py).
-     All text is real text (never model-generated) so scores/names are exact. -->
+<!-- 1080×1080 moment card. Rendered to PNG by Playwright (content.py).
+     Scores/names are real text (never model-generated); the funny CAPTION is baked
+     in as the hero line so the image is self-contained for Discord + Instagram. -->
 <html>
   <head>
     <meta charset="utf-8" />
@@ -14,36 +15,39 @@
           radial-gradient(1200px 700px at 80% -10%, {{ accent }}55, transparent 60%),
           linear-gradient(160deg, #0c0f1a 0%, #131a2b 55%, #0a0d16 100%);
         display: flex; flex-direction: column;
-        padding: 84px 80px;
+        padding: 76px 80px 84px;
         position: relative; overflow: hidden;
       }
       .glow { position: absolute; width: 620px; height: 620px; border-radius: 50%;
         background: {{ accent }}; filter: blur(180px); opacity: .22;
         bottom: -240px; left: -180px; }
       .top { display: flex; justify-content: space-between; align-items: center;
-        font-size: 30px; letter-spacing: .22em; text-transform: uppercase;
+        font-size: 30px; letter-spacing: .2em; text-transform: uppercase;
         color: #aeb6c9; font-weight: 700; z-index: 2; }
       .pill { background: {{ accent }}; color: #0a0d16; padding: 10px 22px;
-        border-radius: 999px; font-size: 26px; letter-spacing: .12em; }
-      .headline { margin-top: 56px; font-size: 78px; line-height: 1.04;
-        font-weight: 800; letter-spacing: -.015em; z-index: 2; max-width: 920px; }
-      .spacer { flex: 1; }
-      .board { display: flex; align-items: stretch; gap: 28px; z-index: 2; }
+        border-radius: 999px; font-size: 25px; letter-spacing: .1em; }
+
+      /* numbers zone — the factual anchor, compact up top */
+      .board { display: flex; align-items: stretch; gap: 24px; margin-top: 44px; z-index: 2; }
       .side { flex: 1; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
-        border-radius: 28px; padding: 40px 44px; }
+        border-radius: 24px; padding: 26px 32px; }
       .side.win { border-color: {{ accent }}; background: {{ accent }}1f; }
-      .side .name { font-size: 40px; font-weight: 700; color: #e7ecf6;
+      .side .name { font-size: 34px; font-weight: 700; color: #e7ecf6;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .side .pts { font-size: 116px; font-weight: 800; letter-spacing: -.03em; margin-top: 8px; }
-      .vs { align-self: center; font-size: 40px; font-weight: 800; color: #8b93a7; }
-      .stat { z-index: 2; }
-      .stat .big { font-size: 168px; font-weight: 800; letter-spacing: -.04em; color: {{ accent }}; }
-      .stat .sub { font-size: 46px; font-weight: 700; color: #e7ecf6; margin-top: 6px; }
-      .lines { z-index: 2; display: flex; flex-direction: column; gap: 26px; }
-      .line { font-size: 50px; font-weight: 700; color: #e7ecf6; line-height: 1.15;
-        padding-left: 28px; border-left: 8px solid {{ accent }}; }
-      .blurb { margin-top: 40px; font-size: 34px; line-height: 1.34; color: #c7cedd;
-        max-width: 960px; z-index: 2; }
+      .side .pts { font-size: 82px; font-weight: 800; letter-spacing: -.03em; margin-top: 4px; }
+      .vs { align-self: center; font-size: 34px; font-weight: 800; color: #8b93a7; }
+      .stat { margin-top: 40px; z-index: 2; }
+      .stat .big { font-size: 150px; font-weight: 800; letter-spacing: -.04em; color: {{ accent }};
+        line-height: 1; }
+      .stat .sub { font-size: 44px; font-weight: 700; color: #e7ecf6; margin-top: 8px; }
+      .lines { margin-top: 40px; z-index: 2; display: flex; flex-direction: column; gap: 22px; }
+      .line { font-size: 46px; font-weight: 700; color: #e7ecf6; line-height: 1.15;
+        padding-left: 26px; border-left: 8px solid {{ accent }}; }
+
+      /* caption — the funny hero, fills the rest */
+      .spacer { flex: 1; min-height: 28px; }
+      .caption { z-index: 2; font-size: 58px; font-weight: 800; line-height: 1.18;
+        letter-spacing: -.01em; border-top: 6px solid {{ accent }}; padding-top: 30px; }
     </style>
   </head>
   <body>
@@ -52,9 +56,6 @@
       <span>{{ period }}{% if league %} · {{ league }}{% endif %}</span>
       <span class="pill">{{ type_label }}</span>
     </div>
-
-    <div class="headline">{{ headline }}</div>
-    <div class="spacer"></div>
 
     {% if score_b is not none %}
     <div class="board">
@@ -80,6 +81,7 @@
     </div>
     {% endif %}
 
-    {% if blurb and not lines %}<div class="blurb">{{ blurb }}</div>{% endif %}
+    <div class="spacer"></div>
+    <div class="caption">{{ caption }}</div>
   </body>
 </html>

@@ -71,7 +71,8 @@ def discover_ff_leagues(espn_s2: str, swid: str) -> list[dict]:
     returns what it can (the reliable per-league validation happens at add-league)."""
     try:
         profile = fetch_fan_profile(espn_s2, swid)
-    except (EspnAuthError, requests.RequestException, ValueError):
+    except (EspnAuthError, requests.RequestException, ValueError) as e:
+        log.debug("league discovery skipped: %s", type(e).__name__)  # never log cookies
         return []
     out: list[dict] = []
     for pref in (profile.get("preferences") or []):

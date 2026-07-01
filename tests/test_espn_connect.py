@@ -203,6 +203,24 @@ def test_build_client_requires_connection(db, user):
         creds.build_client_for_user(db, user, league_id=1)
 
 
+# ── discovery hardening: ids are coerced to ints, junk entries dropped ────────
+def test_discover_coerces_ids_and_drops_injection(monkeypatch):
+    from fantasy.espn import account
+    profile = {"preferences": [
+        {"metaData": {"entry": {"gameId": "ffl", "seasonId": "2025", "entryId": "7",
+                                "groups": [{"groupId": "42", "groupName": "Good"}]}}},
+        # A hostile season/league id must not survive as a string (int() drops it).
+        {"metaData": {"entry": {"gameId": "ffl", "seasonId": "<script>", "entryId": "1",
+                                "groups": [{"groupId": "<img onerror=x>", "groupName": "Bad"}]}}},
+    ]}
+    monkeypatch.setattr(account, "fetch_fan_profile", lambda s2, swid: profile)
+    out = account.discover_ff_leagues("s2", "swid")
+    assert out == [{"league_id": 42, "team_id": 7, "season": 2025, "name": "Good"}]
+    for lg in out:  # nothing an attacker could inject reaches the caller as a string
+        assert isinstance(lg["league_id"], int)
+        assert lg["season"] is None or isinstance(lg["season"], int)
+
+
 # ── consent copy endpoint (public disclosure) ────────────────────────────────
 def test_consent_copy_public(db):
     # No auth override — this route is public.

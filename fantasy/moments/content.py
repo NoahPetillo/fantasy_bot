@@ -224,25 +224,34 @@ def _fallback_caption(moment: Moment) -> str:
     return f"{emoji} {moment.blurb} {_savage_kicker(moment)}{tail}"
 
 
+def card_header(moment: Moment) -> str:
+    """Short Discord message line posted alongside the image (the funny caption is
+    baked INTO the image, so the message itself stays a compact label)."""
+    emoji = _EMOJI.get(moment.type, "🔥")
+    label = _LABEL.get(moment.type, moment.type.value.upper()).title()
+    period = moment.period_label or f"Week {moment.week}"
+    return f"{emoji} {label} · {period}"
+
+
 # ── graphic ──────────────────────────────────────────────────────────────────
-def render_card(moment: Moment, out_dir: Path | None = None) -> Path | None:
-    """Render a 1080×1080 PNG for the moment. Returns the path, or None if no
-    renderer is available (caption still posts on its own)."""
+def render_card(moment: Moment, caption: str | None = None, out_dir: Path | None = None) -> Path | None:
+    """Render a 1080×1080 PNG with the CAPTION baked in as the hero text. Returns
+    the path, or None if no renderer is available (caption still posts as text)."""
+    caption = caption or moment.blurb
     out_dir = out_dir or settings.media_dir
     h = hashlib.sha1(f"{moment.type.value}:{moment.dedup_key}".encode()).hexdigest()[:8]
     out = Path(out_dir) / f"wk{moment.week:02d}_{moment.type.value}_{h}.png"
-    if _render_playwright(moment, out):
+    if _render_playwright(moment, out, caption):
         return out
-    if _render_pillow(moment, out):
+    if _render_pillow(moment, out, caption):
         return out
     log.warning("No graphic renderer available for moment %s; posting caption only.", moment.type)
     return None
 
 
-def _ctx(moment: Moment) -> dict:
+def _ctx(moment: Moment, caption: str) -> dict:
     return {
-        "headline": moment.headline,
-        "blurb": moment.blurb,
+        "caption": caption,
         "week": moment.week,
         "period": moment.period_label or f"Week {moment.week}",
         "league": settings.content_league_name,
@@ -255,7 +264,7 @@ def _ctx(moment: Moment) -> dict:
     }
 
 
-def _render_playwright(moment: Moment, out: Path) -> bool:
+def _render_playwright(moment: Moment, out: Path, caption: str) -> bool:
     """High-fidelity HTML→PNG. Needs the `write` extra + `playwright install chromium`."""
     try:
         from jinja2 import Template
@@ -264,7 +273,7 @@ def _render_playwright(moment: Moment, out: Path) -> bool:
         return False
     try:
         tpl = (Path(__file__).parent / "templates" / "card.html").read_text()
-        html = Template(tpl).render(**_ctx(moment))
+        html = Template(tpl).render(**_ctx(moment, caption))
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1080, "height": 1080})
@@ -335,8 +344,24 @@ def _fit_lines(draw, text: str, max_w: float, sizes: list[int], max_lines: int):
     return font, _wrap_px(draw, text, font, max_w)[:max_lines], sizes[-1]
 
 
-def _render_pillow(moment: Moment, out: Path) -> bool:
-    """Dependency-light fallback card. Always available (Pillow is a core dep)."""
+def _fit_block(draw, text: str, max_w: float, max_h: float, sizes: list[int]):
+    """Largest bold size whose wrapped text fits within max_w × max_h."""
+    for size in sizes:
+        font = _font(size, True)
+        lines = _wrap_px(draw, text, font, max_w)
+        lh = int(size * 1.22)
+        if len(lines) * lh <= max_h:
+            return font, lines, lh
+    size = sizes[-1]
+    font = _font(size, True)
+    lh = int(size * 1.22)
+    lines = _wrap_px(draw, text, font, max_w)
+    return font, lines[: max(1, int(max_h // lh))], lh
+
+
+def _render_pillow(moment: Moment, out: Path, caption: str) -> bool:
+    """Dependency-light fallback card, with the caption baked in as the hero text.
+    Always available (Pillow is a core dep)."""
     try:
         from PIL import Image, ImageDraw
     except Exception as e:  # noqa: BLE001
@@ -346,8 +371,9 @@ def _render_pillow(moment: Moment, out: Path) -> bool:
         W = H = 1080
         M = 80                      # margin
         maxw = W - 2 * M            # usable text width
-        white, grey, dim = (255, 255, 255), (231, 236, 246), (199, 206, 221)
+        white, grey = (255, 255, 255), (231, 236, 246)
         accent = _ACCENT.get(moment.type, "#ff5d3b")
+        accent_rgb = tuple(int(accent.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
         img = Image.new("RGB", (W, H), (12, 15, 26))
         d = ImageDraw.Draw(img)
         d.rectangle([0, 0, W, 14], fill=accent)  # accent header bar
@@ -355,54 +381,47 @@ def _render_pillow(moment: Moment, out: Path) -> bool:
         eyebrow = (moment.period_label or f"WEEK {moment.week}").upper()
         wk = eyebrow + (f"  ·  {settings.content_league_name}"
                         if settings.content_league_name else "")
-        d.text((M, 70), _plain(wk), font=_font(34, True), fill=grey)
-        d.text((M, 120), _plain(_LABEL.get(moment.type, moment.type.value.upper())),
-               font=_font(58, True), fill=accent)
+        d.text((M, 66), _plain(wk), font=_font(32, True), fill=grey)
+        d.text((M, 110), _plain(_LABEL.get(moment.type, moment.type.value.upper())),
+               font=_font(52, True), fill=accent)
 
-        # Headline: largest size that fits in 3 lines.
-        hfont, hlines, hsize = _fit_lines(d, moment.headline, maxw, [76, 70, 64, 58, 52], 3)
-        y = 232
-        for line in hlines:
-            d.text((M, y), line, font=hfont, fill=white)
-            y += int(hsize * 1.18)
-
-        # Scoreboard (matchup) or a single big stat.
+        # ── numbers zone (compact, upper) — the factual anchor ──
+        y = 208
         if moment.score_b is not None:
-            y = 600
             for nm, sc in ((moment.team_a, moment.score_a), (moment.team_b, moment.score_b)):
                 score = f"{sc:.1f}"
-                sfont = _font(88, True)
+                sfont = _font(58, True)
                 sw = d.textlength(score, font=sfont)
                 d.text((W - M - sw, y), score, font=sfont, fill=accent)
-                nfont, nlines, _ = _fit_lines(d, str(nm), maxw - sw - 60, [46, 40, 34], 1)
-                d.text((M, y + 20), nlines[0] if nlines else _plain(nm), font=nfont, fill=grey)
-                y += 150
+                nfont, nlines, _ = _fit_lines(d, str(nm), maxw - sw - 40, [42, 36, 30], 1)
+                d.text((M, y + 12), nlines[0] if nlines else _plain(nm), font=nfont, fill=grey)
+                y += 88
         elif moment.big_stat:
-            bfont, blines, _ = _fit_lines(d, moment.big_stat, maxw, [150, 130, 110, 90], 1)
-            d.text((M, 600), blines[0] if blines else _plain(moment.big_stat),
-                   font=bfont, fill=accent)
+            bfont, blines, bsz = _fit_lines(d, moment.big_stat, maxw, [120, 104, 88], 1)
+            d.text((M, y), blines[0] if blines else _plain(moment.big_stat), font=bfont, fill=accent)
+            y += int(bsz * 1.12)
             if moment.player:
-                pf, pl, _ = _fit_lines(d, moment.player, maxw, [52, 46, 40], 1)
-                d.text((M, 770), pl[0] if pl else _plain(moment.player), font=pf, fill=grey)
+                pf, pl, _ = _fit_lines(d, moment.player, maxw, [46, 40, 34], 1)
+                d.text((M, y), pl[0] if pl else _plain(moment.player), font=pf, fill=grey)
+                y += 58
         elif moment.lines:
-            y = 560
-            accent_rgb = tuple(int(accent.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
             for ln in moment.lines:
-                lf, ll, lsz = _fit_lines(d, ln, maxw - 28, [50, 44, 38], 2)
+                lf, ll, lsz = _fit_lines(d, ln, maxw - 28, [44, 38, 34], 2)
                 d.rectangle([M, y, M + 8, y + len(ll) * int(lsz * 1.2)], fill=accent_rgb)
                 for sub in ll:
                     d.text((M + 28, y), sub, font=lf, fill=grey)
                     y += int(lsz * 1.2)
-                y += 28
+                y += 20
 
-        # Blurb pinned to the bottom (skipped when a lines block already says it).
-        if moment.blurb and not moment.lines:
-            bl_font = _font(32, False)
-            blurb_lines = _wrap_px(d, moment.blurb, bl_font, maxw)[:3]
-            y = H - M - len(blurb_lines) * 46
-            for line in blurb_lines:
-                d.text((M, y), line, font=bl_font, fill=dim)
-                y += 46
+        # ── caption hero (the funny line, fills the rest) ──
+        cap_top = max(y, 380) + 46
+        d.rectangle([M, cap_top - 28, M + 96, cap_top - 21], fill=accent_rgb)  # divider tick
+        cfont, clines, lh = _fit_block(d, caption, maxw, H - M - cap_top,
+                                       [60, 54, 48, 44, 40, 36, 32])
+        yy = cap_top
+        for line in clines:
+            d.text((M, yy), line, font=cfont, fill=white)
+            yy += lh
 
         img.save(out, "PNG")
         return out.exists()

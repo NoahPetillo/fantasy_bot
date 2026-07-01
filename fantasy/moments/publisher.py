@@ -49,7 +49,12 @@ class DiscordPublisher:
 
 
 def publish_moment(proposal: Proposal) -> str | None:
-    """Post a ``moment`` proposal's stored caption + graphic. Returns a message ref."""
-    caption = proposal.payload.get("caption") or proposal.detail or proposal.title
+    """Post a ``moment`` to Discord. The funny caption is baked INTO the image, so
+    the message text is just a short header; if the image failed to render, fall
+    back to posting the caption as text so the joke still lands."""
     image_path = proposal.payload.get("image_path")
-    return DiscordPublisher().publish(caption, image_path)
+    if image_path and Path(image_path).exists():
+        message = proposal.payload.get("header") or proposal.title
+    else:
+        message = proposal.payload.get("caption") or proposal.detail or proposal.title
+    return DiscordPublisher().publish(message, image_path)

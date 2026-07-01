@@ -117,7 +117,9 @@ function renderConsent(md){
   if (checkboxLabel) $("consentLabel").innerHTML = inline(checkboxLabel);
 }
 
-function token(){ return ($("devToken").value || localStorage.getItem("clerk_dev_token") || "").trim(); }
+// sessionStorage (cleared when the tab closes), not localStorage — this is a
+// temporary dev-only token holder; Phase 4 replaces it with real Clerk sign-in.
+function token(){ return ($("devToken").value || sessionStorage.getItem("clerk_dev_token") || "").trim(); }
 function authHeaders(extra){
   const h = Object.assign({ "Content-Type": "application/json" }, extra || {});
   const t = token(); if (t) h["Authorization"] = "Bearer " + t;
@@ -134,7 +136,8 @@ function msg(text, ok){ const m = $("msg"); m.textContent = text; m.className = 
 function showLeagues(list){
   if (!list || !list.length){ $("leagues").innerHTML = ""; return; }
   $("leagues").innerHTML = "Leagues found: <ul>" +
-    list.map(l => `<li>${esc(l.name || ("League " + l.league_id))}${l.season ? " ("+l.season+")" : ""}</li>`).join("") + "</ul>";
+    list.map(l => `<li>${esc(l.name || ("League " + l.league_id))}` +
+      `${l.season != null ? " (" + esc(String(l.season)) + ")" : ""}</li>`).join("") + "</ul>";
 }
 
 function updateConnectEnabled(){
@@ -168,7 +171,7 @@ $("consentCheck").addEventListener("change", updateConnectEnabled);
 $("s2").addEventListener("input", updateConnectEnabled);
 $("swid").addEventListener("input", updateConnectEnabled);
 $("devToken").addEventListener("change", () => {
-  localStorage.setItem("clerk_dev_token", $("devToken").value.trim()); refreshStatus();
+  sessionStorage.setItem("clerk_dev_token", $("devToken").value.trim()); refreshStatus();
 });
 
 $("connectBtn").addEventListener("click", async () => {
@@ -202,7 +205,7 @@ $("disconnectBtn").addEventListener("click", async () => {
   catch (e){ msg(e.message, false); }
 });
 
-const saved = localStorage.getItem("clerk_dev_token"); if (saved) $("devToken").value = saved;
+const saved = sessionStorage.getItem("clerk_dev_token"); if (saved) $("devToken").value = saved;
 loadConsent(); refreshStatus(); updateConnectEnabled();
 </script>
 </body>

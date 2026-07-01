@@ -454,8 +454,9 @@ def test_activity_cycle_graceful_when_feed_unavailable(tmp_path):
 
 # ── auto-post (hands-off deploy mode) ──────────────────────────────────────────
 def _stub_generation(monkeypatch):
-    monkeypatch.setattr(cycle, "render_card", lambda m, out_dir=None: None)
+    monkeypatch.setattr(cycle, "render_card", lambda m, caption=None, out_dir=None: None)
     monkeypatch.setattr(cycle, "write_caption", lambda m: "savage cap")
+    monkeypatch.setattr(cycle, "card_header", lambda m: "hdr")
 
 
 def test_autopost_posts_and_marks_executed(monkeypatch, tmp_path):
