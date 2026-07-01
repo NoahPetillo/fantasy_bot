@@ -143,6 +143,8 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
         "vor": round(float(r.vor), 1), "proj": round(float(r.proj), 1)}
         for r in board.itertuples(index=False)}
 
+    trade_block = _trade_block(snap, b, league, rem)
+
     report = _report_card(service, league, snap, season, client) if with_report else None
     from fantasy.orchestrator.influence import influence_stats
     influence = influence_stats(store, season=season, team_id=snap.my_team_id)
@@ -163,8 +165,8 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
                  "league_id": getattr(league, "league_id", None), "team_id": snap.my_team_id},
         "kpis": kpis, "waivers": waivers, "trades": trades, "lineup": rows,
         "lineup_total": round(total, 1), "standings": standings, "feed": feed,
-        "actions": actions, "board_index": board_index, "report": report,
-        "influence": influence,
+        "actions": actions, "board_index": board_index, "trade": trade_block,
+        "report": report, "influence": influence,
         "league_settings": {                      # compact, so the chatbot can answer offline
             "summary": league.summary(),
             "scoring": {k: v for k, v in league.scoring.items() if v},
@@ -245,13 +247,92 @@ def shell_snapshot(client, league, season: int, week: int, my_team_id: int | Non
     }
 
 
-def analyze_trade(give: str, get: str, board_index: dict) -> dict:
-    g = board_index.get(norm_name(give))
-    h = board_index.get(norm_name(get))
-    if not g or not h:
-        missing = give if not g else get
-        return {"error": f"'{missing}' not found on the value board."}
-    net = round(h["vor"] - g["vor"], 1)
-    diff = abs(net)
-    fairness = "even" if diff <= 3 else ("slightly lopsided" if diff <= 8 else "lopsided")
-    return {"give_vor": g["vor"], "get_vor": h["vor"], "net": net, "fairness": fairness}
+def _trade_block(snap, b, league, remaining_weeks: int) -> dict:
+    """Everything the manual Trade Analyzer needs, baked into the snapshot so the
+    analyze endpoint stays instant (no live model/ESPN call). Players are keyed by
+    id and carry their owning team, so the picker can scope "give" to my roster and
+    "get" to other teams, and the analyzer can price a package against real rosters.
+    Includes every ROSTERED player (union of all teams) — free agents are a waiver
+    concern, not tradeable. proj/vor default to 0 for ids without a projection."""
+    players: dict[str, dict] = {}
+    for tid, pids in snap.teams.items():
+        for pid in pids:
+            row = b.loc[pid] if pid in b.index else None
+            players[pid] = {
+                "name": str(row["player_display_name"]) if row is not None else snap.names.get(pid, pid),
+                "pos": str(row["position"]) if row is not None else snap.positions.get(pid, "?"),
+                "proj": round(float(row["proj"]), 1) if row is not None else 0.0,
+                "vor": round(float(row["vor"]), 1) if row is not None else 0.0,
+                "team_id": int(tid),
+            }
+    return {
+        "my_team_id": int(snap.my_team_id),
+        "remaining_weeks": int(remaining_weeks),
+        "team_count": league.team_count,
+        "roster_slots": league.roster.starter_slots,
+        "bench_size": league.roster.bench_size,
+        "ir_size": int(league.roster.slots.get("IR", 0)),
+        "team_names": {str(t): n for t, n in snap.team_names.items()},
+        "teams": {str(t): list(pids) for t, pids in snap.teams.items()},
+        "players": players,
+    }
+
+
+def analyze_trade(give, get, payload: dict) -> dict:
+    """Evaluate a manual N-for-M trade against the user's live roster + league rules.
+
+    ``give``/``get`` are lists of player_id (a lone string is tolerated). Reads the
+    ``trade`` block baked into the snapshot payload and delegates the valuation to
+    :func:`fantasy.decisions.trades.evaluate_trade_package`.
+    """
+    from fantasy.decisions.trades import evaluate_trade_package
+    from fantasy.league_settings import LeagueSettings, RosterRequirements
+
+    tb = payload.get("trade")
+    if not tb or not tb.get("players"):
+        return {"error": "Trade data isn't built for this league yet — build the analysis first."}
+
+    give = [give] if isinstance(give, str) else list(give or [])
+    get = [get] if isinstance(get, str) else list(get or [])
+    give = [g for g in give if g]
+    get = [h for h in get if h]
+    if not give or not get:
+        return {"error": "Add at least one player on each side of the trade."}
+    if len(set(give)) != len(give) or len(set(get)) != len(get):
+        return {"error": "The same player is listed twice on one side."}
+    if set(give) & set(get):
+        return {"error": "A player can't be on both sides of the trade."}
+
+    players = tb["players"]
+    teams = tb.get("teams", {})
+    my_team_id = int(tb["my_team_id"])
+
+    for pid in give + get:
+        if pid not in players:
+            return {"error": "One of the selected players isn't in this league."}
+    for pid in give:
+        if int(players[pid].get("team_id", -1)) != my_team_id:
+            return {"error": f"{players[pid]['name']} isn't on your roster."}
+    get_teams = {int(players[pid].get("team_id", -1)) for pid in get}
+    if my_team_id in get_teams:
+        return {"error": "You already own one of the players you're trying to acquire."}
+
+    single = len(get_teams) == 1
+    counter_roster = teams.get(str(next(iter(get_teams)))) if single else None
+
+    rem = int(tb.get("remaining_weeks", 1)) or 1
+    ros = {pid: p["proj"] * rem for pid, p in players.items()}
+    ros_vor = {pid: p["vor"] * rem for pid, p in players.items()}
+    pos = {pid: p["pos"] for pid, p in players.items()}
+    names = {pid: p["name"] for pid, p in players.items()}
+    league = LeagueSettings(team_count=tb.get("team_count", 12),
+                            roster=RosterRequirements(slots=dict(tb.get("roster_slots", {}))))
+
+    result = evaluate_trade_package(
+        my_roster=teams.get(str(my_team_id), []), counter_roster=counter_roster,
+        give=give, get=get, ros=ros, ros_vor=ros_vor, pos=pos, league=league,
+        bench_size=int(tb.get("bench_size", 0)), ir_size=int(tb.get("ir_size", 0)),
+        single_counterparty=single, names=names)
+    if single:
+        result["with_team"] = tb.get("team_names", {}).get(str(next(iter(get_teams))))
+    return result

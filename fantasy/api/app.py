@@ -399,7 +399,7 @@ def api_analyze_trade(body: dict = Body(...), user: User = Depends(get_current_u
     leagues = list_leagues(db, user)
     lg = get_league(db, user, body.get("league")) if body.get("league") else (leagues[0] if leagues else None)
     snap = (latest_snapshot(db, lg.id) if lg else {}) or {}
-    return analyze_trade(body.get("give", ""), body.get("get", ""), snap.get("board_index", {}))
+    return analyze_trade(body.get("give", []), body.get("get", []), snap)
 
 
 @app.get("/", response_class=HTMLResponse)
