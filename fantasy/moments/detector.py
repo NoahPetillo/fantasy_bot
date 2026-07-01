@@ -91,7 +91,7 @@ def detect_moments(box_scores: list, season: int, week: int) -> list[Moment]:
 
     league_median = median(s.score for s in sides_all)
     moments: list[Moment] = []
-    moments += _close_and_blowout(matchups, season, week)
+    moments += _matchups(matchups, season, week)
     moments += _luck(matchups, league_median, season, week)
     moments += _superlatives(sides_all, season, week)
     moments += _bench_blunder(sides_all, season, week)
@@ -99,15 +99,25 @@ def detect_moments(box_scores: list, season: int, week: int) -> list[Moment]:
     return moments
 
 
-# ── margin-based: nail-biter / blowout ──────────────────────────────────────
-def _close_and_blowout(matchups, season, week) -> list[Moment]:
+# ── per-game recap: exactly ONE card per matchup ────────────────────────────
+def _matchups(matchups, season, week) -> list[Moment]:
+    """One recap per game: a nail-biter if close, a blowout if lopsided, else a
+    plain result — so EVERY matchup in the week gets a card."""
     out: list[Moment] = []
     for a, b in matchups:
         margin = abs(a.score - b.score)
-        if margin <= 0:
-            continue  # exact tie — skip (winner/loser undefined; vanishingly rare)
-        winner, loser = (a, b) if a.score > b.score else (b, a)
         key = _matchup_key(a, b)
+        if margin <= 0:  # tie — rare, but still a game worth a card
+            out.append(Moment(
+                type=MomentType.matchup, season=season, week=week, spice=52.0,
+                team_id=None, dedup_key=key,
+                team_a=a.name, score_a=a.score, team_b=b.name, score_b=b.score,
+                headline=f"{a.name} and {b.name} tied at {a.score:.1f}",
+                blurb=f"{a.name} and {b.name} played to a {a.score:.1f}–{b.score:.1f} "
+                      f"tie in Week {week}.",
+            ))
+            continue
+        winner, loser = (a, b) if a.score > b.score else (b, a)
         if margin < settings.content_nailbiter_margin:
             spice = _clamp(72 + 28 * (1 - margin / settings.content_nailbiter_margin))
             out.append(Moment(
@@ -129,6 +139,16 @@ def _close_and_blowout(matchups, season, week) -> list[Moment]:
                 headline=f"{winner.name} demolishes {loser.name} by {margin:.1f}",
                 blurb=(f"{winner.name} blew out {loser.name} {winner.score:.1f}–{loser.score:.1f} "
                        f"in Week {week}, a {margin:.1f}-point beatdown."),
+            ))
+        else:  # ordinary result — still gets a recap card (closer games rank higher)
+            out.append(Moment(
+                type=MomentType.matchup, season=season, week=week,
+                spice=_clamp(42 + max(0.0, 14 - margin * 0.5)),
+                team_id=loser.team_id, dedup_key=key,
+                team_a=winner.name, score_a=winner.score, team_b=loser.name, score_b=loser.score,
+                headline=f"{winner.name} beat {loser.name} {winner.score:.1f}-{loser.score:.1f}",
+                blurb=(f"{winner.name} beat {loser.name} {winner.score:.1f}–{loser.score:.1f} "
+                       f"in Week {week}."),
             ))
     return out
 

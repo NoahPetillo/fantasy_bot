@@ -48,7 +48,10 @@ class ContentConfig(BaseSettings):
     content_autopost_min_spice: float = Field(default=0.0, alias="CONTENT_AUTOPOST_MIN_SPICE")
 
     # ── Moment tuning ──
-    content_moments_per_week: int = Field(default=3, alias="CONTENT_MOMENTS_PER_WEEK")
+    # Every matchup gets a recap card; this is how many EXTRA superlatives
+    # (bench blunders, low/high scores, boom/bust, streaks…) to add on top.
+    content_extra_moments: int = Field(default=5, alias="CONTENT_EXTRA_MOMENTS")
+    content_moments_per_week: int = Field(default=3, alias="CONTENT_MOMENTS_PER_WEEK")  # legacy
     content_nailbiter_margin: float = Field(default=5.0, alias="CONTENT_NAILBITER_MARGIN")
     content_blowout_margin: float = Field(default=40.0, alias="CONTENT_BLOWOUT_MARGIN")
     content_bench_blunder_min: float = Field(default=8.0, alias="CONTENT_BENCH_BLUNDER_MIN")

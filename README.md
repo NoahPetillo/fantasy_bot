@@ -65,4 +65,67 @@ fantasy/
   orchestrator/        # scheduler, loops, action log, idempotency
   notify/              # Slack / ntfy
   api/                 # FastAPI: approval webhook, draft assistant, dashboard
+  moments/             # league content engine (savage recap cards → Discord)
 ```
+
+## League Content Bot (savage weekly recaps → Discord)
+
+`scripts/content_bot.py` scans your league's most recently finished week, makes a
+card + trash-talk caption for **every matchup** plus a handful of extra "moments"
+(worst bench decision, lowest score, boom/bust, win streaks…), and posts them to
+your league's Discord. The funny caption is baked onto the image itself.
+
+### Run it
+
+Always run from the **project root** (the `fantasy_app/` folder that has
+`pyproject.toml`):
+
+```bash
+cd /Users/noahpetillo/Projects/fantasy_app
+
+# Tuesday morning: preview the week, then confirm to post
+uv run python scripts/content_bot.py
+
+# Preview only — generate + print, never posts
+uv run python scripts/content_bot.py --dry-run
+
+# Post everything with no prompt (e.g. from a cron job)
+uv run python scripts/content_bot.py --yes
+
+# Recap a specific week
+uv run python scripts/content_bot.py --week 14
+
+# Run continuously (posts Tue 10am ET + trades/waivers every 6h)
+uv run python scripts/content_bot.py --schedule
+```
+
+A normal run previews the cards (captions + image paths) and asks
+`Post all N to Discord? [y/N]` — nothing hits the chat until you say yes. Each
+moment posts at most once (tracked in `data/content_bot.sqlite`), so previewing
+or cancelling never "uses it up".
+
+### Setup — `.env` in the project root
+
+```
+ESPN_S2=...              # ESPN cookies (private-league access)
+ESPN_SWID=...
+ESPN_LEAGUE_ID=...
+ESPN_SEASON=2025
+ESPN_TEAM_ID=...
+DISCORD_WEBHOOK_URL=...  # the channel it posts to (Server Settings → Integrations → Webhooks)
+GROQ_API_KEY=gsk_...     # writes the captions (free tier — console.groq.com)
+CONTENT_LEAGUE_NAME=...  # optional, printed on the cards
+```
+
+Optional tuning (also `.env`):
+
+```
+CONTENT_EXTRA_MOMENTS=5   # extra superlatives on top of the per-matchup recaps
+CONTENT_VOICE=group_chat  # savage/profane (default) | instagram (public-safe)
+CONTENT_RIVALRIES=[["Team A","Team B"]]   # flag rivalry games
+CONTENT_ROAST_FREQUENCY=3 # inside jokes (config/roasts.yaml) fire ~1-in-N weeks
+GROQ_MODEL=llama-3.3-70b-versatile        # swap if it gets deprecated
+```
+
+Per-person inside jokes live in `config/roasts.yaml` (keyed by league + ESPN first name).
+

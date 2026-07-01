@@ -89,11 +89,14 @@ def test_nailbiter_targets_loser_and_orders_winner_first():
     assert "2.0" in nb.big_stat                  # margin
 
 
-def test_blowout_threshold_not_triggered_for_moderate_margin():
-    # 30-point win is neither a nail-biter (<5) nor a blowout (>40).
+def test_moderate_margin_gets_plain_matchup_recap():
+    # 30-point win is neither a nail-biter (<5) nor a blowout (>40) -> plain recap.
     moments = detect_moments([_box("X", 1, 120.0, "Y", 2, 90.0)], 2025, 1)
-    assert MomentType.nailbiter not in _types(moments)
-    assert MomentType.blowout not in _types(moments)
+    t = _types(moments)
+    assert MomentType.nailbiter not in t and MomentType.blowout not in t
+    assert MomentType.matchup in t
+    mm = next(m for m in moments if m.type == MomentType.matchup)
+    assert mm.team_a == "X" and mm.score_a == 120.0 and mm.team_b == "Y" and mm.team_id == 2
 
 
 def test_high_low_scores_pick_extremes():
@@ -322,17 +325,37 @@ class _FakeClient:
         return self._teams
 
 
+def test_content_cycle_gives_every_matchup_a_recap(monkeypatch, tmp_path):
+    from fantasy.moments.models import RECAP_TYPES
+    _stub_generation(monkeypatch)
+    store = Store(path=tmp_path / "recaps.sqlite")
+    # extras=0 -> only the per-matchup recaps. 3 matchups in _league_boxes -> 3 cards.
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store, notifier=None,
+                          extras=0, generate=True)
+    assert len(fresh) == 3
+    recap_values = {t.value for t in RECAP_TYPES}
+    assert all(p.payload["moment_type"] in recap_values for p in fresh)
+
+
+def test_content_cycle_adds_extras_on_top_of_recaps(monkeypatch, tmp_path):
+    _stub_generation(monkeypatch)
+    store = Store(path=tmp_path / "extras.sqlite")
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store, notifier=None,
+                          extras=2, generate=True)
+    assert len(fresh) == 5   # 3 matchup recaps + 2 extras
+
+
 def test_content_cycle_builds_moment_proposals_and_dedups(tmp_path):
     store = Store(path=tmp_path / "t.sqlite")
     client = _FakeClient(_league_boxes())
     first = content_cycle(client, 2025, 7, store=store, notifier=None,
-                          per_week=3, generate=False)
+                          extras=3, generate=False)
     assert first, "expected fresh moment proposals"
     assert all(p.kind == ProposalKind.moment for p in first)
     assert all(p.payload["channel"] == "discord" for p in first)
     # Re-running the same week produces no new proposals (idempotency by moment id).
     again = content_cycle(client, 2025, 7, store=store, notifier=None,
-                          per_week=3, generate=False)
+                          extras=3, generate=False)
     assert again == []
     store.close()
 
@@ -467,7 +490,7 @@ def test_autopost_posts_and_marks_executed(monkeypatch, tmp_path):
     monkeypatch.setattr(publisher, "publish_moment", lambda p: posted.append(p.id) or "discord:1")
     store = Store(path=tmp_path / "ap.sqlite")
     fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
-                          notifier=None, per_week=2, generate=True)
+                          notifier=None, extras=2, generate=True)
     assert fresh and len(posted) == len(fresh)          # every fresh moment posted
     assert all(store.get(p.id).status.value == "executed" for p in fresh)
     store.close()
@@ -480,7 +503,7 @@ def test_no_autopost_when_disabled(monkeypatch, tmp_path):
     monkeypatch.setattr(publisher, "publish_moment", lambda p: called.append(1) or "x")
     store = Store(path=tmp_path / "ap2.sqlite")
     fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
-                          notifier=None, per_week=2, generate=True)
+                          notifier=None, extras=2, generate=True)
     assert fresh and not called                          # nothing auto-posted
     assert all(store.get(p.id).status.value == "proposed" for p in fresh)
     store.close()
@@ -494,7 +517,7 @@ def test_autopost_respects_spice_threshold(monkeypatch, tmp_path):
     monkeypatch.setattr(publisher, "publish_moment", lambda p: called.append(1) or "x")
     store = Store(path=tmp_path / "ap3.sqlite")
     fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
-                          notifier=None, per_week=2, generate=True)
+                          notifier=None, extras=2, generate=True)
     assert fresh and not called                          # threshold too high
     store.close()
 
@@ -506,6 +529,6 @@ def test_autopost_failure_falls_back_to_proposed(monkeypatch, tmp_path):
     monkeypatch.setattr(publisher, "publish_moment", lambda p: None)   # e.g. no webhook
     store = Store(path=tmp_path / "ap4.sqlite")
     fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
-                          notifier=None, per_week=2, generate=True)
+                          notifier=None, extras=2, generate=True)
     assert fresh and all(store.get(p.id).status.value == "proposed" for p in fresh)
     store.close()

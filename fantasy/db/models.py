@@ -107,9 +107,13 @@ class League(Base):
 
 
 class Snapshot(Base):
-    """A built dashboard payload for one league/week (replaces dashboard_<id>.json)."""
+    """A built dashboard payload for one league/week (replaces dashboard_<id>.json).
+    Owned transitively via ``league`` — one row per (league, week), upserted."""
 
     __tablename__ = "snapshots"
+    __table_args__ = (
+        UniqueConstraint("league_id", "week", name="uq_snapshot_league_week"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=gen_uuid)
     league_id: Mapped[uuid.UUID] = mapped_column(
@@ -117,7 +121,9 @@ class Snapshot(Base):
     )
     week: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payload: Mapped[dict] = mapped_column(JSONColumn, nullable=False, default=dict)
-    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    built_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
     league: Mapped[League] = relationship(back_populates="snapshots")
 
@@ -125,9 +131,11 @@ class Snapshot(Base):
 class Proposal(Base):
     """A recommended action awaiting approve/reject (replaces the SQLite Store).
 
-    ``idempotency_key`` is unique *per user* so re-running a build never logs the
-    same action twice — the invariant the single-tenant store relied on, now
-    scoped to the owning user.
+    ``id`` is the domain proposal's stable hex id (the identifier the API and
+    idempotency use). The full serialized domain proposal lives in ``payload``;
+    the columns (kind/status/value/idempotency_key/league_id) are query indexes
+    kept in sync. ``idempotency_key`` is unique *per user* so re-running a build
+    never logs the same action twice — the store invariant, now scoped per user.
     """
 
     __tablename__ = "proposals"
@@ -135,7 +143,7 @@ class Proposal(Base):
         UniqueConstraint("user_id", "idempotency_key", name="uq_proposal_user_idempotency"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=gen_uuid)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -148,7 +156,9 @@ class Proposal(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONColumn, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
     league: Mapped[League | None] = relationship(back_populates="proposals")
 

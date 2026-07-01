@@ -27,6 +27,7 @@ XAI_MODEL = "grok-4.3"                          # xAI's recommended fast model
 _XAI_URL = "https://api.x.ai/v1/chat/completions"
 
 _ACCENT = {
+    MomentType.matchup: "#3a86ff",
     MomentType.nailbiter: "#ff5d3b",
     MomentType.blowout: "#9b5de5",
     MomentType.high_score: "#2ec4b6",
@@ -43,6 +44,7 @@ _ACCENT = {
     MomentType.waiver: "#ffd23f",
 }
 _EMOJI = {
+    MomentType.matchup: "🏈",
     MomentType.nailbiter: "😱", MomentType.blowout: "💀", MomentType.high_score: "👑",
     MomentType.low_score: "🚮", MomentType.bench_blunder: "🪑", MomentType.lucky: "🍀",
     MomentType.unlucky: "🥲", MomentType.boom: "🚀", MomentType.bust: "🥚",
@@ -50,6 +52,7 @@ _EMOJI = {
     MomentType.trade: "🤝", MomentType.waiver: "💰",
 }
 _LABEL = {
+    MomentType.matchup: "RESULT",
     MomentType.nailbiter: "NAIL-BITER", MomentType.blowout: "BLOWOUT",
     MomentType.high_score: "TOP SCORE", MomentType.low_score: "LOW SCORE",
     MomentType.bench_blunder: "BENCH BLUNDER", MomentType.lucky: "LUCKY W",

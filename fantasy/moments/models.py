@@ -14,6 +14,7 @@ from enum import Enum
 
 
 class MomentType(str, Enum):
+    matchup = "matchup"              # generic per-game recap (every game gets one)
     nailbiter = "nailbiter"          # decided by a hair (your "beat me by 1 point")
     blowout = "blowout"              # decided by a mile
     high_score = "high_score"        # week's top score
@@ -33,8 +34,12 @@ class MomentType(str, Enum):
 
 # Whether a moment is about a single head-to-head matchup (gets a scoreboard
 # layout) or a league-wide superlative / a single player.
-MATCHUP_TYPES = {MomentType.nailbiter, MomentType.blowout, MomentType.lucky,
-                 MomentType.unlucky, MomentType.rivalry}
+MATCHUP_TYPES = {MomentType.matchup, MomentType.nailbiter, MomentType.blowout,
+                 MomentType.lucky, MomentType.unlucky, MomentType.rivalry}
+
+# Per-game recaps: exactly ONE of these is emitted for every matchup, so every
+# game in the week gets a card. Everything else is a superlative "extra".
+RECAP_TYPES = {MomentType.matchup, MomentType.nailbiter, MomentType.blowout}
 
 
 @dataclass

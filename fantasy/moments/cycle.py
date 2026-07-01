@@ -19,7 +19,7 @@ from fantasy.moments.config import content_config as settings  # decoupled from 
 from fantasy.moments.activity import detect_trades, detect_waivers
 from fantasy.moments.content import card_header, render_card, write_caption
 from fantasy.moments.detector import detect_moments
-from fantasy.moments.models import Moment
+from fantasy.moments.models import RECAP_TYPES, Moment
 from fantasy.moments.score import rank_and_select
 from fantasy.moments.standings import detect_rivalries, detect_streaks
 from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
@@ -76,11 +76,11 @@ def _maybe_autopost(p: Proposal, store: Store) -> bool:
     return False
 
 
-def _emit(moments: list[Moment], store: Store, notifier, per_week: int | None,
-          generate: bool) -> list[Proposal]:
-    """Rank → dedup → (generate caption+graphic) → persist → auto-post or notify."""
+def _emit(moments: list[Moment], store: Store, notifier, generate: bool) -> list[Proposal]:
+    """dedup → (generate caption+graphic) → persist → auto-post or notify. Emits the
+    given list as-is (selection/ranking happens upstream in the cycle)."""
     fresh: list[Proposal] = []
-    for m in rank_and_select(moments, n=per_week):
+    for m in moments:
         p = _moment_to_proposal(m)
         if store.by_key(p.idempotency_key) is not None:
             continue  # already raised
@@ -130,9 +130,10 @@ def _enrich_managers(moments: list[Moment], teams: list) -> list[Moment]:
 
 
 def content_cycle(client, season: int, week: int, store: Store | None = None,
-                  notifier=None, per_week: int | None = None, generate: bool = True,
+                  notifier=None, extras: int | None = None, generate: bool = True,
                   recap_week: int | None = None) -> list[Proposal]:
-    """Weekly recap: box-score moments + standings moments (streaks, rivalries)."""
+    """Weekly recap: a card for EVERY matchup, plus the top-K superlative extras
+    (bench blunders, low/high scores, boom/bust, streaks, rivalries)."""
     box_scores, resolved_week = _resolve_box_scores(client, recap_week or week)
     if not box_scores:
         log.info("Content cycle: no scored week found near wk%s — nothing to do.", week)
@@ -145,16 +146,20 @@ def content_cycle(client, season: int, week: int, store: Store | None = None,
         moments += detect_rivalries(teams, season, resolved_week, settings.content_rivalries)
     _enrich_managers(moments, teams)
 
+    n_extras = settings.content_extra_moments if extras is None else extras
+    recaps = sorted([m for m in moments if m.type in RECAP_TYPES],
+                    key=lambda m: m.spice, reverse=True)
+    extra_moments = rank_and_select([m for m in moments if m.type not in RECAP_TYPES], n=n_extras)
+
     store = store or Store()
-    fresh = _emit(moments, store, notifier, per_week, generate)
-    log.info("Content cycle wk%s: %d moments, %d new (voice=%s).",
-             resolved_week, len(moments), len(fresh), settings.content_voice)
+    fresh = _emit(recaps + extra_moments, store, notifier, generate)
+    log.info("Content cycle wk%s: %d matchup recaps + %d extras, %d new (voice=%s).",
+             resolved_week, len(recaps), len(extra_moments), len(fresh), settings.content_voice)
     return fresh
 
 
 def activity_cycle(client, season: int, store: Store | None = None, notifier=None,
-                   per_scan: int | None = None, generate: bool = True,
-                   size: int = 60) -> list[Proposal]:
+                   generate: bool = True, size: int = 60) -> list[Proposal]:
     """Transaction recap: completed trades + notable FAAB pickups from the activity
     feed. The feed is a current-season endpoint and 404s off-season — handled here
     so the cycle is a safe no-op rather than an error."""
@@ -168,7 +173,8 @@ def activity_cycle(client, season: int, store: Store | None = None, notifier=Non
     moments += detect_waivers(activities, season, min_bid=settings.content_min_faab_bid)
     _enrich_managers(moments, _teams(client))
     store = store or Store()
-    fresh = _emit(moments, store, notifier, per_scan, generate)
+    selected = rank_and_select(moments, n=settings.content_extra_moments)
+    fresh = _emit(selected, store, notifier, generate)
     log.info("Activity cycle: %d activities, %d moments, %d new.",
              len(activities), len(moments), len(fresh))
     return fresh

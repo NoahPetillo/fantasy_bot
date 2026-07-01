@@ -1,20 +1,20 @@
-"""Multi-league registry + decision tracking (undo/confirm/influence)."""
+"""Legacy registry + influence ledger (domain units) and the per-user decision
+endpoints (undo / confirm / leagues)."""
 
 from __future__ import annotations
 
 import tempfile
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
-import fantasy.api.app as api
+from fantasy.db.proposal_store import PgProposalStore
+from fantasy.db.repos import add_league
 from fantasy.leagues import LeagueRef, LeagueRegistry
 from fantasy.orchestrator.influence import influence_stats
 from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
 
 
-# ── registry ──────────────────────────────────────────────────────────────────
+# ── registry (legacy domain object, still used by scripts/orchestrator) ─────────
 def test_registry_add_get_remove_upsert(tmp_path):
     reg = LeagueRegistry(tmp_path / "leagues.json")
     reg.add(LeagueRef(league_id=111, team_id=2, season=2025, name="A"))
@@ -27,7 +27,7 @@ def test_registry_add_get_remove_upsert(tmp_path):
     assert reg.remove(999) is False
 
 
-# ── influence ledger ──────────────────────────────────────────────────────────
+# ── influence ledger (works over any store, here the legacy SQLite Store) ───────
 def _seed_store() -> Store:
     s = Store(Path(tempfile.mkdtemp()) / "inf.sqlite")
 
@@ -53,40 +53,44 @@ def test_influence_stats_counts_and_rate():
     assert st["by_kind"]["trade"] == 2
 
 
-# ── decision endpoints ────────────────────────────────────────────────────────
-def _client_with_seed():
-    db = Path(tempfile.mkdtemp()) / "api.sqlite"
-    api._store = Store(db)
+# ── per-user decision endpoints ─────────────────────────────────────────────────
+def _seed_proposal(store, payload=None) -> Proposal:
     p = Proposal(kind=ProposalKind.trade, season=2024, week=5, team_id=1,
                  title="Trade A for B", value=12.0,
-                 payload={"key_fields": {"give": "A", "get": "B"}, "give": "A", "get": "B"})
-    api._store.add(p)
-    return TestClient(api.app), p
+                 payload=payload or {"key_fields": {"give": "A", "get": "B"}, "give": "A", "get": "B"})
+    store.add(p)
+    return p
 
 
-def test_undo_reverts_to_proposed():
-    client, p = _client_with_seed()
-    client.post(f"/proposals/{p.id}/approve")
-    r = client.post(f"/proposals/{p.id}/undo").json()
+def test_undo_reverts_to_proposed(webapp):
+    user = webapp.make_user("owner")
+    store = PgProposalStore(webapp.db, user.id)
+    p = _seed_proposal(store)
+    webapp.auth_as(user)
+    webapp.client.post(f"/proposals/{p.id}/approve")
+    r = webapp.client.post(f"/proposals/{p.id}/undo").json()
     assert r["status"] == "proposed"
-    assert api._store.get(p.id).status == ProposalStatus.proposed
+    webapp.db.expire_all()
+    assert store.get(p.id).status == ProposalStatus.proposed
 
 
-def test_confirm_without_league_is_unconfirmed():
-    client, p = _client_with_seed()
-    client.post(f"/proposals/{p.id}/approve")
-    r = client.post(f"/proposals/{p.id}/confirm").json()
+def test_confirm_without_league_is_unconfirmed(webapp):
+    user = webapp.make_user("owner")
+    store = PgProposalStore(webapp.db, user.id)
+    p = _seed_proposal(store)  # payload has no "league_id"
+    webapp.auth_as(user)
+    webapp.client.post(f"/proposals/{p.id}/approve")
+    r = webapp.client.post(f"/proposals/{p.id}/confirm").json()
     assert r["confirmed"] is False
     assert "No league" in r["detail"]
-    # still approved (not executed) since it couldn't be confirmed
-    assert api._store.get(p.id).status == ProposalStatus.approved
+    webapp.db.expire_all()
+    assert store.get(p.id).status == ProposalStatus.approved  # still approved, not executed
 
 
-def test_leagues_endpoint_lists(monkeypatch, tmp_path):
-    reg = LeagueRegistry(tmp_path / "leagues.json")
-    reg.add(LeagueRef(league_id=555, team_id=1, season=2025, name="Z"))
-    monkeypatch.setattr(api, "registry", lambda: reg)
-    client = TestClient(api.app)
-    d = client.get("/api/leagues").json()
-    assert any(lg["league_id"] == 555 for lg in d["leagues"])
-    assert d["active"] == 555
+def test_leagues_endpoint_lists_only_my_leagues(webapp):
+    user = webapp.make_user("owner")
+    lg = add_league(webapp.db, user, espn_league_id=555, team_id=1, season=2025, name="Z")
+    webapp.auth_as(user)
+    d = webapp.client.get("/api/leagues").json()
+    assert [x["league_id"] for x in d["leagues"]] == [str(lg.id)]
+    assert d["leagues"][0]["espn_league_id"] == 555 and d["active"] == str(lg.id)

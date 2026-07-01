@@ -42,3 +42,41 @@ def db(tmp_path):
     finally:
         session.close()
         reset_engine()
+
+
+@pytest.fixture
+def webapp(db):
+    """Per-user API harness: a TestClient plus helpers to create users and
+    authenticate as one (overriding the Clerk ``current_user`` dependency). The
+    override resolves the user in the request's own DB session so writes work."""
+    from fastapi import Depends
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import Session
+
+    import fantasy.api.app as api
+    from fantasy.api.clerk_auth import get_current_user
+    from fantasy.db.base import get_db
+    from fantasy.db.models import User
+
+    class Harness:
+        def __init__(self):
+            self.db = db
+            self.client = TestClient(api.app)
+
+        def make_user(self, clerk_id: str) -> User:
+            u = User(clerk_user_id=clerk_id, email=f"{clerk_id}@ex.com")
+            db.add(u)
+            db.commit()
+            db.refresh(u)
+            return u
+
+        def auth_as(self, user: User) -> None:
+            uid = user.id
+
+            def _current(dbs: Session = Depends(get_db)):
+                return dbs.get(User, uid)
+
+            api.app.dependency_overrides[get_current_user] = _current
+
+    yield Harness()
+    api.app.dependency_overrides.clear()

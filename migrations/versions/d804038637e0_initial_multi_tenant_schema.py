@@ -1,8 +1,8 @@
 """initial multi-tenant schema
 
-Revision ID: 1a319f418af3
+Revision ID: d804038637e0
 Revises: 
-Create Date: 2026-06-30 21:08:39.837198
+Create Date: 2026-06-30 21:53:50.315953
 
 """
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 import fantasy.db.base  # custom GUID type used below
 
 # revision identifiers, used by Alembic.
-revision: str = '1a319f418af3'
+revision: str = 'd804038637e0'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -69,7 +69,7 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_leagues_user_id'), ['user_id'], unique=False)
 
     op.create_table('proposals',
-    sa.Column('id', fantasy.db.base.GUID(), nullable=False),
+    sa.Column('id', sa.String(length=32), nullable=False),
     sa.Column('user_id', fantasy.db.base.GUID(), nullable=False),
     sa.Column('league_id', fantasy.db.base.GUID(), nullable=True),
     sa.Column('kind', sa.String(length=32), nullable=False),
@@ -78,7 +78,7 @@ def upgrade() -> None:
     sa.Column('idempotency_key', sa.String(length=64), nullable=True),
     sa.Column('payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('decided_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['league_id'], ['leagues.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -95,7 +95,8 @@ def upgrade() -> None:
     sa.Column('payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
     sa.Column('built_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['league_id'], ['leagues.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('league_id', 'week', name='uq_snapshot_league_week')
     )
     with op.batch_alter_table('snapshots', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_snapshots_league_id'), ['league_id'], unique=False)
