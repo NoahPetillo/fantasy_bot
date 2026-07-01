@@ -10,7 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from fantasy.moments import content, roasts
+import fantasy.moments.publisher as publisher
+from fantasy.moments import content, cycle, roasts
 from fantasy.moments.activity import detect_trades, detect_waivers
 from fantasy.moments.content import write_caption
 from fantasy.moments.cycle import activity_cycle, content_cycle
@@ -439,4 +440,62 @@ def test_activity_cycle_graceful_when_feed_unavailable(tmp_path):
     store = Store(path=tmp_path / "b.sqlite")
     assert activity_cycle(_ActClient(raises=True), 2025, store=store, notifier=None,
                           generate=False) == []
+    store.close()
+
+
+# ── auto-post (hands-off deploy mode) ──────────────────────────────────────────
+def _stub_generation(monkeypatch):
+    monkeypatch.setattr(cycle, "render_card", lambda m, out_dir=None: None)
+    monkeypatch.setattr(cycle, "write_caption", lambda m: "savage cap")
+
+
+def test_autopost_posts_and_marks_executed(monkeypatch, tmp_path):
+    _stub_generation(monkeypatch)
+    monkeypatch.setattr(cycle.settings, "content_autopost", True)
+    monkeypatch.setattr(cycle.settings, "content_autopost_min_spice", 0.0)
+    posted: list[str] = []
+    monkeypatch.setattr(publisher, "publish_moment", lambda p: posted.append(p.id) or "discord:1")
+    store = Store(path=tmp_path / "ap.sqlite")
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
+                          notifier=None, per_week=2, generate=True)
+    assert fresh and len(posted) == len(fresh)          # every fresh moment posted
+    assert all(store.get(p.id).status.value == "executed" for p in fresh)
+    store.close()
+
+
+def test_no_autopost_when_disabled(monkeypatch, tmp_path):
+    _stub_generation(monkeypatch)
+    monkeypatch.setattr(cycle.settings, "content_autopost", False)
+    called: list[int] = []
+    monkeypatch.setattr(publisher, "publish_moment", lambda p: called.append(1) or "x")
+    store = Store(path=tmp_path / "ap2.sqlite")
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
+                          notifier=None, per_week=2, generate=True)
+    assert fresh and not called                          # nothing auto-posted
+    assert all(store.get(p.id).status.value == "proposed" for p in fresh)
+    store.close()
+
+
+def test_autopost_respects_spice_threshold(monkeypatch, tmp_path):
+    _stub_generation(monkeypatch)
+    monkeypatch.setattr(cycle.settings, "content_autopost", True)
+    monkeypatch.setattr(cycle.settings, "content_autopost_min_spice", 999.0)  # nothing qualifies
+    called: list[int] = []
+    monkeypatch.setattr(publisher, "publish_moment", lambda p: called.append(1) or "x")
+    store = Store(path=tmp_path / "ap3.sqlite")
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
+                          notifier=None, per_week=2, generate=True)
+    assert fresh and not called                          # threshold too high
+    store.close()
+
+
+def test_autopost_failure_falls_back_to_proposed(monkeypatch, tmp_path):
+    _stub_generation(monkeypatch)
+    monkeypatch.setattr(cycle.settings, "content_autopost", True)
+    monkeypatch.setattr(cycle.settings, "content_autopost_min_spice", 0.0)
+    monkeypatch.setattr(publisher, "publish_moment", lambda p: None)   # e.g. no webhook
+    store = Store(path=tmp_path / "ap4.sqlite")
+    fresh = content_cycle(_FakeClient(_league_boxes()), 2025, 7, store=store,
+                          notifier=None, per_week=2, generate=True)
+    assert fresh and all(store.get(p.id).status.value == "proposed" for p in fresh)
     store.close()

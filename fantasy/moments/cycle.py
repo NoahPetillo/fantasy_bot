@@ -22,7 +22,7 @@ from fantasy.moments.detector import detect_moments
 from fantasy.moments.models import Moment
 from fantasy.moments.score import rank_and_select
 from fantasy.moments.standings import detect_rivalries, detect_streaks
-from fantasy.orchestrator.models import Proposal, ProposalKind
+from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
 
 log = logging.getLogger(__name__)
@@ -59,9 +59,26 @@ def _moment_to_proposal(m: Moment) -> Proposal:
     )
 
 
+def _maybe_autopost(p: Proposal, store: Store) -> bool:
+    """Hands-off mode: if auto-post is on and the moment clears the spice bar,
+    post to Discord now (skipping human approval) and mark it executed. On failure
+    (e.g. no webhook) returns False so it falls back to the approval path."""
+    if not settings.content_autopost or p.value < settings.content_autopost_min_spice:
+        return False
+    from fantasy.moments.publisher import publish_moment
+
+    ref = publish_moment(p)
+    if ref:
+        store.set_status(p.id, ProposalStatus.executed, ref)
+        log.info("Auto-posted moment %s -> %s", p.id, ref)
+        return True
+    log.warning("Auto-post failed for %s; leaving it for manual approval.", p.id)
+    return False
+
+
 def _emit(moments: list[Moment], store: Store, notifier, per_week: int | None,
           generate: bool) -> list[Proposal]:
-    """Rank → dedup → (generate caption+graphic) → persist → notify the new ones."""
+    """Rank → dedup → (generate caption+graphic) → persist → auto-post or notify."""
     fresh: list[Proposal] = []
     for m in rank_and_select(moments, n=per_week):
         p = _moment_to_proposal(m)
@@ -74,7 +91,7 @@ def _emit(moments: list[Moment], store: Store, notifier, per_week: int | None,
             p.payload["image_path"] = str(img) if img else None
             p.detail = caption + (f"\n\n🖼  Image ready: {img}" if img else "\n\n(caption only)")
         if store.add(p):
-            if notifier is not None:
+            if not _maybe_autopost(p, store) and notifier is not None:
                 ref = notifier.notify(p)
                 if ref:
                     store.set_status(p.id, p.status, ref)

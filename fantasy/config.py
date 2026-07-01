@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # whole setup — no bot, no OAuth. (Instagram is deliberately NOT automated:
     # the engine produces a ready-to-post image you upload to IG by hand.)
     discord_webhook_url: str | None = Field(default=None, alias="DISCORD_WEBHOOK_URL")
+    # Auto-post (skip human approval) — the hands-off deploy mode. When on, any
+    # generated moment with spice >= content_autopost_min_spice posts straight to
+    # Discord and is marked executed. Off by default (approve-first).
+    content_autopost: bool = Field(default=False, alias="CONTENT_AUTOPOST")
+    content_autopost_min_spice: float = Field(default=0.0, alias="CONTENT_AUTOPOST_MIN_SPICE")
     content_moments_per_week: int = Field(default=3, alias="CONTENT_MOMENTS_PER_WEEK")
     content_nailbiter_margin: float = Field(default=5.0, alias="CONTENT_NAILBITER_MARGIN")
     content_blowout_margin: float = Field(default=40.0, alias="CONTENT_BLOWOUT_MARGIN")

@@ -50,3 +50,12 @@ services:
       # ── Content engine (optional): where approved "moments" get posted.
       - key: DISCORD_WEBHOOK_URL
         sync: false
+      # Post moments straight to Discord with no manual approval — the hands-off
+      # weekly experience. Set to "false" to require dashboard approval instead.
+      - key: CONTENT_AUTOPOST
+        value: "true"
+      # Only auto-post moments at/above this spice score (0 = every selected
+      # moment; raise it, e.g. 55, to auto-post only the spiciest and leave the
+      # rest for manual approval).
+      - key: CONTENT_AUTOPOST_MIN_SPICE
+        value: "0"
