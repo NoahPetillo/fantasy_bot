@@ -6,10 +6,16 @@ from __future__ import annotations
 import pytest
 
 import fantasy.api.app as api
+from fantasy.config import settings
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_web_settings():
+def _hermetic_web_settings(monkeypatch):
+    # Neutralize any real Clerk keys loaded from .env/.env.local so tests stay
+    # hermetic (tests that need Clerk set their own values / override the dep).
+    for attr in ("clerk_publishable_key", "clerk_secret_key", "clerk_issuer", "clerk_jwks_url",
+                 "stripe_secret_key", "stripe_webhook_secret", "stripe_price_id"):
+        monkeypatch.setattr(settings, attr, None)
     # Fresh chat limiter per test so a tiny per-test limit can't leak across tests.
     api._chat_limiter = None
     yield

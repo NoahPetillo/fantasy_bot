@@ -16,12 +16,16 @@ import uuid
 
 from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from fantasy.api import ratelimit
+from fantasy.api.billing_routes import router as billing_router
 from fantasy.api.clerk_auth import clerk_issuer, frontend_api_host, get_current_user
 from fantasy.api.espn_routes import router as espn_router
 from fantasy.api.user_build import build_full_for, build_shell_for
+from fantasy.billing import quota
+from fantasy.billing.plans import max_leagues
 from fantasy.config import ExecutionMode, settings
 from fantasy.db.base import get_db, get_sessionmaker
 from fantasy.db.models import League, User
@@ -29,6 +33,7 @@ from fantasy.db.proposal_store import PgProposalStore
 from fantasy.db.repos import (
     add_league,
     get_league,
+    get_league_by_espn,
     latest_snapshot,
     list_leagues,
     remove_league,
@@ -47,6 +52,7 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title="Fantasy App", version="0.1.0")
 app.include_router(espn_router)  # per-user connect-ESPN + account endpoints
+app.include_router(billing_router)  # plan status, Stripe checkout/portal/webhook
 _store: Store | None = None
 # league uuid (str) -> "building" | "done" | "error: ..."
 _build_status: dict[str, str] = {}
@@ -263,6 +269,16 @@ def api_add_league(body: dict = Body(...), user: User = Depends(get_current_user
     except (TypeError, ValueError):
         raise HTTPException(400, "league_id (and ideally team_id, season) required")
 
+    # Plan gate: only NEW leagues count against the limit (re-adding an existing
+    # league/season is an update). Lock the user row so concurrent adds for this
+    # user serialize and can't both slip past the count check.
+    if get_league_by_espn(db, user, espn_league_id, season) is None:
+        db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one()
+        limit = max_leagues(user.plan)
+        if len(list_leagues(db, user)) >= limit:
+            raise HTTPException(402, f"Your {user.plan} plan allows {limit} league"
+                                     f"{'s' if limit != 1 else ''}. Upgrade to Pro to add more.")
+
     lg = add_league(db, user, espn_league_id, team_id, season, name=body.get("name"))
     try:
         build_shell_for(db, user, lg)  # validates access with the user's cookies
@@ -357,6 +373,13 @@ def api_chat(request: Request, body: dict = Body(...),
         mins = max(1, retry // 60)
         raise HTTPException(429, f"Too many questions — try again in about {mins} min.",
                             headers={"Retry-After": str(retry)})
+    # Per-user, plan-based daily quota (chat costs money per user). Reserve BEFORE
+    # calling the LLM.
+    if not quota.consume_chat(db, user):
+        st = quota.chat_status(db, user)
+        raise HTTPException(429, f"You've reached your daily limit of {st['limit']} "
+                                 f"questions on the {user.plan} plan. Upgrade to Pro for more.",
+                            headers={"X-Quota-Exceeded": "1"})
     from fantasy.chat.agent import answer
     from fantasy.chat.tools import ChatContext
 

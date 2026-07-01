@@ -34,20 +34,31 @@ SYSTEM = (
 
 
 def answer(question: str, ctx: ChatContext) -> dict:
-    """Return {answer, mode, tools_used}. Never raises — degrades to a helpful message."""
+    """Return {answer, mode, tools_used}. Never raises — chains Groq → Anthropic →
+    the keyless parser, and degrades to a helpful message if everything fails
+    (e.g. an LLM is rate-limited AND the stats source is unavailable)."""
     if not question or not question.strip():
         return {"answer": "Ask me an NFL or league question.", "mode": "noop", "tools_used": []}
-    provider = ("_groq" if settings.groq_api_key else
-                "_llm" if settings.anthropic_api_key else None)
-    if provider is None:
-        return _fallback(question, ctx)
+    providers = []
+    if settings.groq_api_key:
+        providers.append(("_groq", _groq))
+    if settings.anthropic_api_key:
+        providers.append(("_llm", _llm))
+    for name, fn in providers:
+        try:
+            return fn(question, ctx)
+        except Exception as e:  # noqa: BLE001 — fall through to the next provider / keyless
+            log.warning("chat provider %s failed (%s); trying next.", name, e)
     try:
-        return (_groq if provider == "_groq" else _llm)(question, ctx)
-    except Exception as e:  # noqa: BLE001
-        log.warning("chat LLM (%s) failed (%s); using fallback.", provider, e)
         out = _fallback(question, ctx)
-        out["mode"] = "fallback (LLM error)"
+        if providers:
+            out["mode"] = "fallback (LLM unavailable)"
         return out
+    except Exception as e:  # noqa: BLE001 — the chat endpoint must never 500
+        log.warning("chat fallback failed (%s)", e)
+        return {"answer": "Sorry — I couldn't answer that right now (a data source was "
+                          "temporarily unavailable). Please try again shortly.",
+                "mode": "error", "tools_used": []}
 
 
 def _openai_tools() -> list[dict]:

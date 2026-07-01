@@ -86,6 +86,15 @@
     </div>
 
     <div class="sec">
+      <h2>Plan &amp; billing</h2>
+      <div id="billing" class="muted">…</div>
+      <div class="acts" style="margin-top:10px">
+        <button id="upgradeBtn" style="display:none" onclick="upgrade()">Upgrade to Pro</button>
+        <button id="manageBtn" class="ghost" style="display:none" onclick="manageBilling()">Manage billing</button>
+      </div>
+    </div>
+
+    <div class="sec">
       <h2>Danger zone</h2>
       <button class="danger" onclick="deleteAccount()">Delete my account</button>
       <div class="faint" style="margin-top:6px">Removes your account, ESPN credentials, leagues, and data — immediately.</div>
@@ -216,19 +225,50 @@ async function renderDashboard(){
   const waivers=(d.waivers||[]).map(w=>`<div class="row"><div><div>➕ ${esc(w.add)} <span class="faint">/ drop ${esc(w.drop)}</span></div><div class="meta">${esc(w.reason)}</div></div><div class="acts">${actbtns(w.id,'proposed')}</div></div>`).join("");
   const trades=(d.trades||[]).map(x=>`<div class="row"><div><div>🔁 get ${esc(x.get)} <span class="faint">/ give ${esc(x.give)}</span> ${x.priority?'<span class="pill">priority</span>':''}</div><div class="meta">${esc(x.reason)}</div></div><div class="acts">${actbtns(x.id,'proposed')}</div></div>`).join("");
   const standings=(d.standings||[]).map(s=>`<tr><td>${s.rank}</td><td>${esc(s.team)}${s.me?' <span class="pill">you</span>':''}</td><td>${s.w}-${s.l}</td><td>${esc(s.pf)}</td></tr>`).join("");
+  const feed=(d.feed||[]).map(f=>`<div class="row"><div><div>${esc(f.title)}</div><div class="meta">${esc(f.detail)}</div></div>${f.corroborated?'<span class="pill">corroborated</span>':''}</div>`).join("");
   const inf=d.influence;
+  const pill=(s)=>`<span class="pill ${esc(s)}">${esc(s)}</span>`;
+  const inflog=(inf&&(inf.log||[]).length)?`<table style="margin-top:8px"><tr><th>Kind</th><th>Recommendation</th><th>Wk</th><th>Value</th><th>Outcome</th></tr>${inf.log.slice(0,12).map(l=>`<tr><td>${esc(l.kind)}</td><td>${esc(l.title)}</td><td>${esc(l.week)}</td><td>${esc(l.value)}</td><td>${pill(l.status)}</td></tr>`).join("")}</table>`:'';
+  // Season report card (the decision audit) — best-effort; present after a full build.
+  const rep=d.report;
+  const ss=rep&&rep.startsit, mt=rep&&rep.model_trades, wv=rep&&rep.waiver;
+  const reportCard=rep?`<div class="sec"><h2>Season report card</h2><div class="kpis">
+      ${ss?`<div class="kpi"><div class="v">${esc(ss.total_left_on_bench)}</div><div class="l">Pts left on bench</div><div class="s">${esc(ss.avg_per_week)}/wk start-sit regret</div></div>`:''}
+      ${mt&&mt.n?`<div class="kpi"><div class="v">${Math.round((mt.win_rate||0)*100)}%</div><div class="l">Bot trade hit-rate</div><div class="s">avg +${esc(mt.mean)} · best +${esc(mt.best)}</div></div>`:''}
+      ${wv?`<div class="kpi"><div class="v">${esc(wv.skill_asset)}</div><div class="l">Waiver value (skill)</div><div class="s">stream ${esc(wv.stream_asset)}</div></div>`:''}
+      <div class="kpi"><div class="v">${esc(rep.trades_made??0)}</div><div class="l">Trades made</div><div class="s">of ${esc(rep.league_trades??0)} leaguewide</div></div>
+    </div>${mt&&mt.best_trade?`<div class="row"><div>Best bot trade idea: get <strong>${esc(mt.best_trade.get)}</strong> / give ${esc(mt.best_trade.give)}</div><div class="meta">would have realized +${esc(mt.best_trade.realized)}</div></div>`:''}</div>`:'';
   $("dash").innerHTML=`
     <div class="card"><div style="font-size:18px;font-weight:700">${esc(t.name||'')}</div>
       <div class="muted">${esc(t.league||'')} · week ${esc(t.week||'—')}</div>
       ${t.build_status==='building'?'<div class="faint">Building full analysis…</div>':''}</div>
     <div class="kpis" style="margin-top:14px">${kpis}</div>
-    ${lineup?`<div class="sec"><h2>Optimal lineup (${esc(d.lineup_total||0)})</h2><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj</th></tr>${lineup}</table></div>`:''}
+    ${lineup?`<div class="sec"><h2>Optimal lineup · start/sit (${esc(d.lineup_total||0)})</h2><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj</th></tr>${lineup}</table></div>`:''}
     ${waivers?`<div class="sec"><h2>Waiver targets</h2>${waivers}</div>`:''}
     ${trades?`<div class="sec"><h2>Trade ideas</h2>${trades}</div>`:''}
-    ${inf?`<div class="sec"><h2>Your influence</h2><div class="row"><div>Followed ${esc(inf.followed)} · Confirmed ${esc(inf.confirmed)} · Rejected ${esc(inf.rejected)} · Pending ${esc(inf.pending)}</div><div class="meta">acceptance ${esc(inf.acceptance_rate??'—')}</div></div></div>`:''}
+    <div class="sec"><h2>Trade analyzer</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="taGive" placeholder="you give (player)" style="flex:1;min-width:130px" />
+        <input id="taGet" placeholder="you get (player)" style="flex:1;min-width:130px" />
+        <button onclick="analyzeTrade()">Analyze</button></div>
+      <div class="msg" id="taResult" style="margin-top:8px"></div></div>
+    ${reportCard}
+    ${inf?`<div class="sec"><h2>Bot influence</h2><div class="row"><div>Followed ${esc(inf.followed)} · Confirmed ${esc(inf.confirmed)} · Rejected ${esc(inf.rejected)} · Pending ${esc(inf.pending)}</div><div class="meta">acceptance ${esc(inf.acceptance_rate??'—')}</div></div>${inflog}</div>`:''}
+    ${feed?`<div class="sec"><h2>News &amp; alerts</h2>${feed}</div>`:''}
     ${standings?`<div class="sec"><h2>Standings</h2><table><tr><th>#</th><th>Team</th><th>W-L</th><th>PF</th></tr>${standings}</table></div>`:''}`;
 }
 async function decide(id,action){ try{ await api("POST",`/proposals/${id}/${action}`); renderDashboard(); }catch(e){ alert(e.message); } }
+async function analyzeTrade(){
+  const give=($("taGive").value||"").trim(), get=($("taGet").value||"").trim();
+  const m=$("taResult"); if(!give||!get){ m.className="msg err"; m.textContent="Enter both players."; return; }
+  try{
+    const r=await api("POST","/api/analyze-trade",{give,get,league:ACTIVE});
+    if(r.error){ m.className="msg err"; m.textContent=r.error; return; }
+    m.className="msg ok";
+    m.innerHTML=`Net VOR ${r.net>=0?'+':''}${esc(r.net)} in your favor — <strong>${esc(r.fairness)}</strong>. `+
+      `<span class="faint">give ${esc(give)} (VOR ${esc(r.give_vor)}) ↔ get ${esc(get)} (VOR ${esc(r.get_vor)})</span>`;
+  }catch(e){ m.className="msg err"; m.textContent=e.message; }
+}
 
 // ── chat ──
 async function ask(){
@@ -244,7 +284,20 @@ async function openSettings(){
   $("settings").classList.add("show");
   try{ const c=await api("GET","/api/legal/espn-consent"); CONSENT_VERSION=c.version; renderConsent(c.markdown||""); }catch(_){}
   refreshEspnStatus();
+  refreshBilling();
 }
+async function refreshBilling(){
+  try{
+    const s = await api("GET","/api/billing/status"); const c = s.chat || {};
+    let html = `Plan: <strong>${esc(s.plan_label||s.plan)}</strong> · Chat today: ${esc(c.used)}/${esc(c.limit)} · Leagues: ${esc(s.leagues_used)}/${esc(s.max_leagues)}`;
+    if (s.plan==="free" && !s.billing_enabled) html += ` <span class="faint">(upgrades not enabled on this server)</span>`;
+    $("billing").innerHTML = html;
+    $("upgradeBtn").style.display = (s.plan==="free" && s.billing_enabled) ? "" : "none";
+    $("manageBtn").style.display = s.can_manage ? "" : "none";
+  }catch(e){ $("billing").textContent = e.message; }
+}
+async function upgrade(){ try{ const r=await api("POST","/api/billing/checkout"); window.location=r.url; }catch(e){ alert(e.message); } }
+async function manageBilling(){ try{ const r=await api("POST","/api/billing/portal"); window.location=r.url; }catch(e){ alert(e.message); } }
 function closeSettings(){ $("settings").classList.remove("show"); }
 async function refreshEspnStatus(){
   try{ const s=await api("GET","/api/espn/status"); const on=!!s.connected;
