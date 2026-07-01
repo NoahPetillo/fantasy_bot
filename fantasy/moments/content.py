@@ -65,7 +65,7 @@ _LABEL = {
 # word (the LLM anchors hard on whatever example it's handed).
 _DISGUST_WORDS = ["vile", "putrid", "awful", "disgusting", "atrocious", "revolting",
                   "gross", "abysmal", "repugnant", "rancid", "wretched", "horrid",
-                  "grotesque", "sorry", "sad", "laughable"]
+                  "grotesque", "sorry", "sad", "laughable", "poverty"]
 
 
 def _flavor_words(moment: Moment, n: int = 4) -> list[str]:

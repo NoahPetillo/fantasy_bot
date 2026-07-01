@@ -189,7 +189,7 @@ async function loadLeagues(){
   const el=$("leagues");
   if(!LEAGUES.length){ el.innerHTML=`<div class="faint" style="font-size:13px">No leagues yet. Connect ESPN in Settings, then add one.</div>`; }
   else el.innerHTML=LEAGUES.map(l=>`<div class="lg ${l.league_id===ACTIVE?'active':''}" onclick="selectLeague('${l.league_id}')">
-    <div><div>${esc(l.name)}</div><div class="sub">${esc(l.season)} · ${l.build_status||''}</div></div>
+    <div><div>${esc(l.name)}</div><div class="sub">${esc(l.season)} · ${esc(l.build_status||'')}</div></div>
     <button class="ghost" style="padding:3px 8px;font-size:12px" onclick="event.stopPropagation();buildLeague('${l.league_id}')">Build</button></div>`).join("");
   if(ACTIVE) renderDashboard();
 }
@@ -207,7 +207,7 @@ async function renderDashboard(){
   const t=d.team||{};
   const kpis=(d.kpis||[]).map(k=>`<div class="kpi"><div class="v">${esc(k.value)}</div><div class="l">${esc(k.label)}</div><div class="s">${esc(k.sub||'')}</div></div>`).join("");
   const lineup=(d.lineup||[]).map(r=>`<tr><td>${esc(r.slot)}</td><td>${esc(r.name)}</td><td>${esc(r.pos)}</td><td>${esc(r.proj)}</td></tr>`).join("");
-  const status=(id)=>{ const s=(d.statuses||{})[id]; return s?`<span class="pill ${s}">${s}</span>`:""; };
+  const status=(id)=>{ const s=(d.statuses||{})[id]; return s?`<span class="pill ${esc(s)}">${esc(s)}</span>`:""; };
   const actbtns=(id,s)=>{ s=(d.statuses||{})[id]||s;
     if(s==="executed") return status(id);
     const b=[]; if(s==="proposed"){ b.push(`<button class="ok" onclick="decide('${id}','approve')">Approve</button>`); b.push(`<button class="ghost" onclick="decide('${id}','reject')">Reject</button>`);}
@@ -225,7 +225,7 @@ async function renderDashboard(){
     ${lineup?`<div class="sec"><h2>Optimal lineup (${esc(d.lineup_total||0)})</h2><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj</th></tr>${lineup}</table></div>`:''}
     ${waivers?`<div class="sec"><h2>Waiver targets</h2>${waivers}</div>`:''}
     ${trades?`<div class="sec"><h2>Trade ideas</h2>${trades}</div>`:''}
-    ${inf?`<div class="sec"><h2>Your influence</h2><div class="row"><div>Followed ${inf.followed} · Confirmed ${inf.confirmed} · Rejected ${inf.rejected} · Pending ${inf.pending}</div><div class="meta">acceptance ${inf.acceptance_rate??'—'}</div></div></div>`:''}
+    ${inf?`<div class="sec"><h2>Your influence</h2><div class="row"><div>Followed ${esc(inf.followed)} · Confirmed ${esc(inf.confirmed)} · Rejected ${esc(inf.rejected)} · Pending ${esc(inf.pending)}</div><div class="meta">acceptance ${esc(inf.acceptance_rate??'—')}</div></div></div>`:''}
     ${standings?`<div class="sec"><h2>Standings</h2><table><tr><th>#</th><th>Team</th><th>W-L</th><th>PF</th></tr>${standings}</table></div>`:''}`;
 }
 async function decide(id,action){ try{ await api("POST",`/proposals/${id}/${action}`); renderDashboard(); }catch(e){ alert(e.message); } }

@@ -9,7 +9,7 @@ we can tell who agreed to what.
 
 from __future__ import annotations
 
-from functools import lru_cache
+import html
 from pathlib import Path
 
 from fantasy.config import settings
@@ -31,22 +31,24 @@ def _body_after_frontmatter(md: str) -> str:
     return md[idx + len(marker):].strip() if idx != -1 else md.strip()
 
 
-def _fill(md: str) -> str:
-    return md.replace("[PRODUCT_NAME]", settings.product_name)
+def _fill(md: str, product: str) -> str:
+    return md.replace("[PRODUCT_NAME]", product)
 
 
-@lru_cache(maxsize=1)
 def espn_consent_markdown() -> str:
     """The consent copy to render at the Connect-ESPN step (product name filled in,
-    editor preamble stripped)."""
-    return _fill(_body_after_frontmatter(_read("ESPN_CONNECT_CONSENT.md")))
+    editor preamble stripped). Returned as markdown; the client escapes on render,
+    so the raw product name is safe here."""
+    body = _body_after_frontmatter(_read("ESPN_CONNECT_CONSENT.md"))
+    return _fill(body, settings.product_name)
 
 
-@lru_cache(maxsize=2)
 def policy_markdown(kind: str) -> str:
-    """Privacy / Terms copy, product name filled in."""
+    """Privacy / Terms copy. Rendered to HTML server-side with raw-HTML passthrough,
+    so the one dynamic value (product name) is HTML-escaped; the .md files
+    themselves are trusted, version-controlled content."""
     fname = {"privacy": "PRIVACY.md", "terms": "TERMS.md"}[kind]
-    return _fill(_read(fname))
+    return _fill(_read(fname), html.escape(settings.product_name))
 
 
 _PAGE = """<!DOCTYPE html>
@@ -78,5 +80,5 @@ def render_policy_html(kind: str) -> str:
 
     title = {"privacy": "Privacy Policy", "terms": "Terms of Service"}[kind]
     body = _md.markdown(policy_markdown(kind), extensions=["extra", "sane_lists"])
-    return _PAGE.format(title=f"{title} — {settings.product_name}", body=body,
-                        product=settings.product_name)
+    safe = html.escape(settings.product_name)  # never inject raw config into HTML
+    return _PAGE.format(title=f"{title} — {safe}", body=body, product=safe)
