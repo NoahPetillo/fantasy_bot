@@ -44,6 +44,39 @@ def espn_consent_markdown() -> str:
 
 @lru_cache(maxsize=2)
 def policy_markdown(kind: str) -> str:
-    """Privacy / Terms copy (served at /privacy and /terms in Phase 4)."""
+    """Privacy / Terms copy, product name filled in."""
     fname = {"privacy": "PRIVACY.md", "terms": "TERMS.md"}[kind]
     return _fill(_read(fname))
+
+
+_PAGE = """<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  :root {{ color-scheme: light dark; }}
+  body {{ margin: 0; background: #0f1115; color: #e7ebf0;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+  main {{ max-width: 760px; margin: 0 auto; padding: 48px 22px 24px; }}
+  h1 {{ font-size: 26px; }} h2 {{ font-size: 20px; margin-top: 32px; }}
+  a {{ color: #4c9ffe; }} code {{ background: #1b1f27; padding: 1px 5px; border-radius: 5px; }}
+  blockquote {{ border-left: 3px solid #2f7de0; margin: 16px 0; padding: 4px 16px; color: #9aa4b2; }}
+  hr {{ border: 0; border-top: 1px solid #262b36; margin: 28px 0; }}
+  footer {{ max-width: 760px; margin: 0 auto; padding: 24px 22px 56px; color: #7c8695;
+    font-size: 13px; border-top: 1px solid #262b36; }}
+</style></head><body>
+<main>{body}</main>
+<footer>{product} is an independent tool, <strong>not affiliated with, authorized, or
+endorsed by ESPN or The Walt Disney Company.</strong><br>
+<a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
+</body></html>"""
+
+
+def render_policy_html(kind: str) -> str:
+    """Server-rendered HTML for /privacy and /terms (with the ESPN disclaimer footer)."""
+    import markdown as _md
+
+    title = {"privacy": "Privacy Policy", "terms": "Terms of Service"}[kind]
+    body = _md.markdown(policy_markdown(kind), extensions=["extra", "sane_lists"])
+    return _PAGE.format(title=f"{title} — {settings.product_name}", body=body,
+                        product=settings.product_name)

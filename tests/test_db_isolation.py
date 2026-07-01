@@ -56,10 +56,10 @@ def test_league_unique_per_user(db):
 
 def test_proposal_idempotency_key_unique_per_user(db):
     a, b = _user(db, "user_a"), _user(db, "user_b")
-    db.add(Proposal(user_id=a.id, kind="waiver", idempotency_key="k1"))
-    db.add(Proposal(user_id=b.id, kind="waiver", idempotency_key="k1"))  # ok: different user
+    db.add(Proposal(id="pa1", user_id=a.id, kind="waiver", idempotency_key="k1"))
+    db.add(Proposal(id="pb1", user_id=b.id, kind="waiver", idempotency_key="k1"))  # ok: different user
     db.commit()
-    db.add(Proposal(user_id=a.id, kind="waiver", idempotency_key="k1"))  # dup for A
+    db.add(Proposal(id="pa2", user_id=a.id, kind="waiver", idempotency_key="k1"))  # dup key for A
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
@@ -107,9 +107,9 @@ def test_delete_account_cascades_only_that_user(db):
         EspnCredential(user_id=a.id, s2_enc="x", swid_enc="y", consent_version="v1",
                        consent_at=datetime.now(timezone.utc)),
         Snapshot(league_id=la.id, week=1, payload={"ok": True}),
-        Proposal(user_id=a.id, league_id=la.id, kind="trade", idempotency_key="ka"),
+        Proposal(id="pca", user_id=a.id, league_id=la.id, kind="trade", idempotency_key="ka"),
         ChatUsage(user_id=a.id, day=datetime.now(timezone.utc).date(), count=3),
-        Proposal(user_id=b.id, league_id=lb.id, kind="trade", idempotency_key="kb"),
+        Proposal(id="pcb", user_id=b.id, league_id=lb.id, kind="trade", idempotency_key="kb"),
     ])
     db.commit()
 

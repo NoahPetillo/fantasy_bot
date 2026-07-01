@@ -1,10 +1,10 @@
 """FastAPI service — the per-user approval surface + control panel.
 
 Multi-tenant: every web endpoint is scoped to the Clerk-authenticated user, and
-their leagues/snapshots/proposals live in Postgres (see fantasy/db). The per-user
-approve path is READ-ONLY to ESPN — it records the decision and never runs the
-execute hook. The legacy shared-password gate stays until Phase 4; the Slack
-integration keeps the legacy global store (the owner's single-tenant channel).
+their leagues/snapshots/proposals live in Postgres (see fantasy/db). Auth is
+Clerk-only (the shared-password gate was removed in Phase 4). The per-user approve
+path is READ-ONLY to ESPN — it records the decision and never runs the execute
+hook. The Slack integration keeps the legacy global store (owner single-tenant).
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ import logging
 import threading
 import uuid
 
-from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
-from fantasy.api import auth, ratelimit
-from fantasy.api.clerk_auth import get_current_user
+from fantasy.api import ratelimit
+from fantasy.api.clerk_auth import clerk_issuer, frontend_api_host, get_current_user
 from fantasy.api.espn_routes import router as espn_router
 from fantasy.api.user_build import build_full_for, build_shell_for
 from fantasy.config import ExecutionMode, settings
@@ -52,40 +52,13 @@ _store: Store | None = None
 _build_status: dict[str, str] = {}
 
 
-@app.middleware("http")
-async def _auth_gate(request: Request, call_next):
-    """Legacy shared-password gate (removed in Phase 4). When a password is
-    configured, every path except the public allowlist requires a valid session
-    cookie; otherwise it's a no-op. Per-user endpoints ALSO require Clerk."""
-    if auth.gate_enabled() and not auth.is_public(request.url.path):
-        if not auth.valid_token(request.cookies.get(auth.COOKIE)):
-            return JSONResponse({"detail": "password required"}, status_code=401)
-    return await call_next(request)
-
-
-@app.get("/api/session")
-def api_session(request: Request) -> dict:
-    authed = not auth.gate_enabled() or auth.valid_token(request.cookies.get(auth.COOKIE))
-    return {"gate_enabled": auth.gate_enabled(), "authed": authed}
-
-
-@app.post("/api/login")
-def api_login(request: Request, response: Response, body: dict = Body(...)) -> dict:
-    """Exchange the shared password for a signed session cookie (legacy gate)."""
-    if not auth.gate_enabled():
-        return {"ok": True, "note": "no password configured — site is open"}
-    if not auth.check_password(str(body.get("password") or "")):
-        raise HTTPException(401, "incorrect password")
-    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
-    response.set_cookie(auth.COOKIE, auth.issue_token(), max_age=auth.TTL,
-                        httponly=True, samesite="lax", secure=secure)
-    return {"ok": True}
-
-
-@app.post("/api/logout")
-def api_logout(response: Response) -> dict:
-    response.delete_cookie(auth.COOKIE)
-    return {"ok": True}
+@app.get("/api/config")
+def api_config() -> dict:
+    """Public bootstrap config for the frontend: the Clerk publishable key (used to
+    initialize Clerk.js) and whether auth is configured on this server."""
+    return {"clerk_publishable_key": settings.clerk_publishable_key,
+            "clerk_frontend_api": frontend_api_host(),
+            "auth_configured": bool(clerk_issuer())}
 
 
 @app.get("/api/me")
@@ -348,12 +321,15 @@ def api_build_league(league_id: str, week: int | None = None,
 @app.get("/api/dashboard")
 def api_dashboard(league: str | None = None, user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)) -> dict:
-    leagues = list_leagues(db, user)
-    if not leagues:
-        return _empty_dashboard()
-    lg = get_league(db, user, league) if league else leagues[0]
-    if lg is None:
-        raise HTTPException(404, "league not found")
+    if league:  # explicit league must be one of the user's (else 404, no silent empty)
+        lg = get_league(db, user, league)
+        if lg is None:
+            raise HTTPException(404, "league not found")
+    else:
+        leagues = list_leagues(db, user)
+        if not leagues:
+            return _empty_dashboard()
+        lg = leagues[0]
     payload = latest_snapshot(db, lg.id) or _empty_dashboard()
     payload.setdefault("team", {})["build_status"] = _build_status.get(str(lg.id))
     store_ = _user_store(db, user, lg.id)
@@ -412,3 +388,17 @@ def index():
 def connect_page():
     """The Connect-ESPN consent screen (shell; its API calls are Clerk-authenticated)."""
     return FileResponse(_CONNECT_STATIC)
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page():
+    from fantasy.legal import render_policy_html
+
+    return HTMLResponse(render_policy_html("privacy"))
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms_page():
+    from fantasy.legal import render_policy_html
+
+    return HTMLResponse(render_policy_html("terms"))

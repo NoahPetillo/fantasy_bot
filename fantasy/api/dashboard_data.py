@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import logging
 
+from typing import Protocol
+
 from fantasy.config import settings
 from fantasy.data.ids import norm_name
 from fantasy.decisions.lineup import optimize_lineup
@@ -17,9 +19,20 @@ from fantasy.decisions.startsit import recommend_lineup
 from fantasy.decisions.trades import recommend_trades
 from fantasy.decisions.waivers import recommend_waivers
 from fantasy.league_state import build_dryrun_snapshot, build_live_snapshot
-from fantasy.orchestrator.store import Store
 
 log = logging.getLogger(__name__)
+
+
+class ProposalStore(Protocol):
+    """The proposal-log surface ``assemble`` needs — satisfied by both the legacy
+    SQLite ``Store`` (single-tenant) and the per-user ``PgProposalStore``."""
+
+    def add(self, p) -> bool: ...
+    def by_key(self, idempotency_key: str): ...
+    def get(self, proposal_id: str): ...
+    def merge_payload(self, proposal_id: str, updates: dict) -> None: ...
+    def set_status(self, proposal_id: str, status, notify_ref: str | None = None) -> None: ...
+    def list(self, status=None, season=None, week=None, kind=None, limit: int = 200): ...
 
 
 def snapshot_path(league_id: int | str | None = None) -> "Path":
@@ -29,7 +42,7 @@ def snapshot_path(league_id: int | str | None = None) -> "Path":
     return settings.data_dir / f"dashboard_{league_id}.json"
 
 
-def assemble(service, league, store: Store, season: int, week: int, client=None,
+def assemble(service, league, store: ProposalStore, season: int, week: int, client=None,
              with_report: bool = True, my_team_id: int | None = None) -> dict:
     from fantasy.news.experts.adjust import priority_boosts
     from fantasy.orchestrator.cycle import fetch_expert_signals
@@ -181,7 +194,7 @@ def _standings(client, my_team_id) -> list[dict]:
         return []
 
 
-def _feed(store: Store, fused: list) -> list[dict]:
+def _feed(store: ProposalStore, fused: list) -> list[dict]:
     items = []
     for f in (fused or [])[:12]:
         items.append({"title": f"{f.player_name} — {f.event_type.value.replace('_', ' ')}",
@@ -196,18 +209,6 @@ def write_snapshot(payload: dict, league_id: int | str | None = None) -> None:
     p = snapshot_path(league_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(payload))
-
-
-def read_snapshot(league_id: int | str | None = None) -> dict | None:
-    paths = [snapshot_path(league_id)]
-    if league_id is not None:
-        paths.append(snapshot_path(None))  # fall back to the legacy single-league file
-    for p in paths:
-        try:
-            return json.loads(p.read_text())
-        except (FileNotFoundError, OSError, json.JSONDecodeError):
-            continue
-    return None
 
 
 def shell_snapshot(client, league, season: int, week: int, my_team_id: int | None) -> dict:

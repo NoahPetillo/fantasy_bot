@@ -45,6 +45,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "cryptography>=43",
     "pyjwt[crypto]>=2.9",
+    "markdown>=3.10.2",
 ]
 
 [project.optional-dependencies]

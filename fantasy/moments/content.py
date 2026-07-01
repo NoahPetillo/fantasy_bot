@@ -61,6 +61,21 @@ _LABEL = {
     MomentType.rivalry: "RIVALRY", MomentType.trade: "TRADE ALERT", MomentType.waiver: "FAAB SPLASH",
 }
 
+# Disgust vocabulary, rotated per moment so captions don't all reach for the same
+# word (the LLM anchors hard on whatever example it's handed).
+_DISGUST_WORDS = ["vile", "putrid", "awful", "disgusting", "atrocious", "revolting",
+                  "gross", "abysmal", "repugnant", "rancid", "wretched", "horrid",
+                  "grotesque", "sorry", "sad", "laughable"]
+
+
+def _flavor_words(moment: Moment, n: int = 4) -> list[str]:
+    """A rotating slice of disgust adjectives, deterministic per moment, so each
+    caption is nudged toward a different one instead of leaning on 'vile'."""
+    h = int(hashlib.sha1(
+        f"{moment.dedup_key}:{moment.type.value}:{moment.week}".encode()).hexdigest(), 16)
+    start = h % len(_DISGUST_WORDS)
+    return [_DISGUST_WORDS[(start + i) % len(_DISGUST_WORDS)] for i in range(n)]
+
 
 # ── caption ──────────────────────────────────────────────────────────────────
 def write_caption(moment: Moment) -> str:
@@ -160,9 +175,11 @@ def _caption_prompt(moment: Moment) -> str:
         voice = (
             "Write 1–2 sentences of savage, sarcastic group-chat trash talk in the voice of a tight "
             "friend group that mercilessly busts each other's balls over fantasy football. Be crude, "
-            "profane and specific — swearing (shit/fuck/etc.) is encouraged. Channel lines like "
-            "\"this team was fucking vile this week\" or \"that start/sit was laughable, fuck you "
-            "{name}\". No hashtags, no corny hype-bot energy, and don't explain the joke.")
+            "profane and specific — swearing (shit/fuck/etc.) is encouraged. Channel a line like "
+            "\"that start/sit was laughable, fuck you {name}\". When you reach for a disgust word, "
+            "VARY it — pull from options like " + ", ".join(_flavor_words(moment)) + " — and don't "
+            "lean on the same adjective every time. No hashtags, no corny hype-bot energy, and don't "
+            "explain the joke.")
     guard = (
         "This is affectionate ball-busting between friends — roast their garbage fantasy decisions "
         "as hard as you want, but NO slurs and no bigotry; never attack anyone's race, gender, "
@@ -184,11 +201,12 @@ def _savage_kicker(moment: Moment) -> str:
     n = moment.manager
     callout = f"fuck you, {n}" if n else "just laughable"
     named = f"{n}, " if n else ""
+    w = _flavor_words(moment)[0]  # rotating disgust word, not always "vile"
     return {
         MomentType.nailbiter: f"{named}you nearly shit the bed on that one.",
         MomentType.blowout: f"that wasn't a game, it was a public execution. {named}embarrassing.",
         MomentType.high_score: "alright, flex on the poors, we get it.",
-        MomentType.low_score: f"genuinely vile. {named}that lineup belongs in a dumpster.",
+        MomentType.low_score: f"genuinely {w}. {named}that lineup belongs in a dumpster.",
         MomentType.bench_blunder: f"a clinic in coaching malpractice — {callout}.",
         MomentType.lucky: f"backed into a W like the absolute fraud {n or 'they are'}.",
         MomentType.unlucky: f"dropped a ton and still lost. {named}the schedule has it out for you, lmao.",

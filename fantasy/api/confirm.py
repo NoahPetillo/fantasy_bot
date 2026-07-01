@@ -37,17 +37,16 @@ def _my_roster_ids(client: EspnClient, team_id: int | None) -> dict[str, str]:
     return out
 
 
-def confirm_on_espn(p: Proposal, client: EspnClient | None = None) -> dict:
-    """Verify the proposal's end-state on ESPN. ``client`` should be built from the
-    owning user's decrypted cookies (multi-tenant); if omitted it falls back to the
-    legacy global client (single-tenant callers only)."""
+def confirm_on_espn(p: Proposal, client: EspnClient) -> dict:
+    """Verify the proposal's end-state on ESPN. ``client`` MUST be built from the
+    owning user's decrypted cookies (``build_client_for_user``) — there is no global
+    fallback, so this can never read ESPN with anyone else's credentials
+    (hard requirement #3)."""
     lid = p.payload.get("league_id")
     if not lid:
         return {"confirmed": False,
                 "detail": "No league recorded on this proposal — rebuild the dashboard to enable verification."}
     try:
-        if client is None:
-            client = EspnClient(league_id=int(lid), season=p.season)
         roster = _my_roster_ids(client, p.team_id)
     except Exception as e:  # noqa: BLE001
         log.warning("confirm read failed: %s", e)

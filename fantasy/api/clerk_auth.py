@@ -39,19 +39,45 @@ def bearer_token(request: Request) -> str | None:
     return request.cookies.get("__session")
 
 
+def frontend_api_host() -> str | None:
+    """Clerk's Frontend API host, decoded from the publishable key (which embeds
+    ``base64("<host>$")``). Trusted config, so it's safe to derive the issuer/JWKS
+    from it — unlike the token's own ``iss``."""
+    pk = settings.clerk_publishable_key
+    if not pk or "_" not in pk:
+        return None
+    try:
+        import base64
+
+        b64 = pk.split("_", 2)[-1]
+        host = base64.b64decode(b64 + "==").decode().rstrip("$").strip("/")
+        return host or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def clerk_issuer() -> str | None:
+    """The trusted issuer: explicit ``CLERK_ISSUER`` if set, else derived from the
+    publishable key's frontend API host."""
+    if settings.clerk_issuer:
+        return settings.clerk_issuer.rstrip("/")
+    host = frontend_api_host()
+    return f"https://{host}" if host else None
+
+
 def _jwks_url() -> str:
     """The JWKS endpoint — from TRUSTED CONFIG ONLY, never from the token.
 
     Deriving the JWKS URL from the token's own ``iss`` would let an attacker point
     us at *their* JWKS and sign their own tokens (issuer spoofing → full auth
-    bypass). We fail closed if neither ``CLERK_JWKS_URL`` nor ``CLERK_ISSUER`` is
-    configured.
+    bypass). We fail closed if we can't determine a trusted issuer.
     """
     if settings.clerk_jwks_url:
         return settings.clerk_jwks_url
-    if settings.clerk_issuer:
-        return settings.clerk_issuer.rstrip("/") + "/.well-known/jwks.json"
-    raise HTTPException(503, "Auth is not configured (set CLERK_ISSUER or CLERK_JWKS_URL).")
+    iss = clerk_issuer()
+    if iss:
+        return iss + "/.well-known/jwks.json"
+    raise HTTPException(503, "Auth is not configured (set CLERK_PUBLISHABLE_KEY or CLERK_ISSUER).")
 
 
 def _signing_key(token: str):
@@ -74,9 +100,10 @@ def verify_clerk_token(token: str) -> dict:
     """
     require = ["exp", "sub"]
     decode_kwargs: dict = {}
-    if settings.clerk_issuer:
-        decode_kwargs["issuer"] = settings.clerk_issuer
-        require.append("iss")  # must be present AND equal the configured issuer
+    issuer = clerk_issuer()
+    if issuer:
+        decode_kwargs["issuer"] = issuer
+        require.append("iss")  # must be present AND equal the trusted issuer
     try:
         key = _signing_key(token)
         claims = jwt.decode(

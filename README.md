@@ -83,6 +83,9 @@ Always run from the **project root** (the `fantasy_app/` folder that has
 ```bash
 cd /Users/noahpetillo/Projects/fantasy_app
 
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
 # Tuesday morning: preview the week, then confirm to post
 uv run python scripts/content_bot.py
 
