@@ -1,12 +1,18 @@
-"""Trade discovery — surface win-win 1-for-1 offers.
+"""Trade engine — auto-discovery of win-win offers + manual package analysis.
 
-For each opponent we evaluate swapping one of my players for one of theirs and
-measure the rest-of-season *starting-lineup* gain for BOTH teams (greedy lineup
-value on ROS-scaled projections). A trade is a candidate only if both sides
-improve. We rank by ``my_gain * P(accept)``, where acceptance rises with the
-opponent's own lineup gain — i.e., offers that genuinely help them too.
+Two entry points, both valuing a trade by the rest-of-season *starting-lineup*
+gain (greedy lineup value on ROS-scaled projections) rather than a raw point sum,
+so roster fit is priced in — a player who can't crack your lineup adds little:
 
-This is the engine behind the proactive "trades you should propose" notifications.
+- ``recommend_trades``: scans every opponent for win-win 1-for-1 swaps and ranks
+  them by ``my_gain * P(accept)`` (acceptance rises with the opponent's own lineup
+  gain — offers that genuinely help them too). This is the engine behind the
+  proactive "trades you should propose" notifications.
+- ``evaluate_trade_package``: scores an arbitrary N-for-M package the user builds
+  in the dashboard's Trade Analyzer, against their real roster + league rules.
+  Reports lineup gain, the raw-points-vs-lineup contrast, VOR fairness, a depth
+  (bench-insurance) term, roster legality, and opponent accept-likelihood.
+
 Market-value fairness (FantasyCalc) and a learned per-manager acceptance model are
 later refinements; ROS lineup gain is the honest v1 signal.
 """

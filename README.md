@@ -68,6 +68,50 @@ fantasy/
   moments/             # league content engine (savage recap cards → Discord)
 ```
 
+## Trade Analyzer
+
+The dashboard's Trade Analyzer evaluates **any multi-player trade** (2-for-1,
+3-for-2, …) against *your* live roster and league rules — not by adding up player
+values, but by the change in your best legal **starting lineup** over the rest of
+the season. Because a lineup only rewards players who fill a slot, two players who
+can't both start are worth less than one "big hitter" who takes a slot; roster fit
+falls out of the math instead of being hand-tuned.
+
+Alongside the headline lineup gain it reports the raw-points swing (to show what
+never reaches your lineup), cross-positional value (VOR) fairness, a depth /
+bench-insurance term (thinning depth has a cost), roster-legality warnings
+(IR-aware "you'd need to drop N"), and — for a single-team offer — the opponent's
+estimated accept-likelihood. Players are chosen from searchable dropdowns ("give"
+scoped to your roster, "get" to other teams) so a typo can't break a lookup.
+
+Core logic: `fantasy/decisions/trades.py::evaluate_trade_package` (shares the greedy
+lineup engine in `decisions/lineup.py` with the start/sit optimizer). It runs off a
+`trade` block baked into the dashboard snapshot (`api/dashboard_data.py`), so
+analysis is instant and needs no live ESPN/model call.
+
+**API** — `POST /api/analyze-trade` (Clerk-authenticated):
+
+```jsonc
+// request
+{ "league": "<league-uuid>", "give": ["<player_id>", ...], "get": ["<player_id>", ...] }
+
+// response (or { "error": "<reason>" })
+{
+  "lineup_delta": 6.4,        // ROS starting-lineup gain — the headline number
+  "points_sum_delta": 14.2,   // raw ROS points swing (get minus give)
+  "vor_delta": 5.1, "fairness": "slightly lopsided",
+  "depth_delta": -1.3, "adjusted_delta": 5.1,  // lineup_delta + depth (drives the verdict)
+  "accept_prob": 0.63,        // single-counterparty offers only (else null)
+  "need_to_drop": 0, "verdict": "favorable",
+  "give": [/* {id,name,pos,ros_proj,ros_vor,starter} … */],
+  "get":  [/* … */],
+  "notes": ["…"]              // plain-English caveats (bench glut, drops needed, …)
+}
+```
+
+The analyzer activates once a league is connected and its analysis is built;
+before that the panel shows a "connect ESPN & build" prompt.
+
 ## League Content Bot (savage weekly recaps → Discord)
 
 `scripts/content_bot.py` scans your league's most recently finished week, makes a
