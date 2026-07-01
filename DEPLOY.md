@@ -103,19 +103,27 @@ If you add ESPN cookies and let it train the projection model on startup, bump t
 1. Push to GitHub. Railway → **New Project → Deploy from GitHub repo**. It detects
    the `Dockerfile` automatically.
 2. **Variables** tab → add the env vars from the table (`HOST=0.0.0.0`,
-   `DATA_DIR=/data`, `SITE_PASSWORD`, an LLM key, ESPN cookies).
-3. **Volumes** → add a volume mounted at `/data` (so SQLite + snapshots persist).
-4. Deploy; Railway gives you a public URL under **Settings → Networking**.
+   `DATA_DIR=/data`, `DATABASE_URL`, `CREDENTIAL_ENC_KEY`, the `CLERK_*` keys, an
+   LLM key; add `STRIPE_*` for paid plans).
+3. **Migrations** → run `alembic upgrade head` once against `DATABASE_URL` (Render
+   does this automatically via `preDeployCommand`; on Railway add it as a deploy/
+   release command or run it once from a shell).
+4. **Volumes** → add a volume mounted at `/data` (only for cached model data /
+   generated media now — per-user state lives in Postgres).
+5. Deploy; Railway gives you a public URL under **Settings → Networking**.
 
 ---
 
 ## After it's live
 
-- Visit the URL: you should see the **lock screen**. Enter `SITE_PASSWORD` → the
-  dashboard loads. The chat bubble works without logging in.
-- Health check: `GET /health` returns `{"status":"ok", ...}`.
-- No data yet? The dashboard shows a fallback until a snapshot is built. With ESPN
-  cookies set, add a league in the sidebar and hit **Build full analysis**.
+- Visit the URL: you should see the **Clerk sign-in**. Sign up / sign in → the
+  dashboard loads, scoped to your account. The public chat bubble works without an
+  account (rate-limited per IP).
+- Health check: `GET /health` returns `{"status":"ok", ...}`; `GET /api/config`
+  returns `auth_configured: true` once the `CLERK_*` keys are set.
+- New account: open **Settings → Connect ESPN**, paste your `espn_s2` / `SWID`
+  cookies (consent required), add a league, then hit **Build**. Preseason leagues
+  show a shell view until the season's stats publish.
 
 ---
 
