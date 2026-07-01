@@ -7,7 +7,7 @@ different angles on the same game while ignoring the rest of the league.
 
 from __future__ import annotations
 
-from fantasy.config import settings
+from fantasy.moments.config import content_config as settings  # decoupled from the app
 from fantasy.moments.models import MATCHUP_TYPES, Moment
 
 

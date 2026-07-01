@@ -16,7 +16,7 @@ import hashlib
 import logging
 from pathlib import Path
 
-from fantasy.config import settings
+from fantasy.moments.config import content_config as settings  # decoupled from the app
 
 log = logging.getLogger(__name__)
 

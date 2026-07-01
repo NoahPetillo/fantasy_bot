@@ -23,6 +23,15 @@ from fantasy.orchestrator.models import ProposalKind
 from fantasy.orchestrator.store import Store
 
 
+def test_content_engine_uses_decoupled_config():
+    """Every moments module reads the self-contained content config, NOT the app's
+    global settings — so the multi-tenant refactor of fantasy/config.py can't break it."""
+    from fantasy.moments.config import content_config
+    assert content.settings is content_config
+    assert cycle.settings is content_config
+    assert roasts.settings is content_config
+
+
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
     # Never let real .env LLM keys leak into tests (no live API calls).

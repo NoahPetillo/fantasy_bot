@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 from statistics import median
 
-from fantasy.config import settings
+from fantasy.moments.config import content_config as settings  # decoupled from the app
 from fantasy.moments.models import Moment, MomentType
 
 log = logging.getLogger(__name__)

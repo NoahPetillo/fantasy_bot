@@ -17,7 +17,7 @@ from pathlib import Path
 
 import requests
 
-from fantasy.config import settings
+from fantasy.moments.config import content_config as settings  # decoupled from the app
 from fantasy.orchestrator.models import Proposal
 
 log = logging.getLogger(__name__)

@@ -33,9 +33,37 @@ logs everyone out. See `fantasy/api/auth.py`.
 | `DISCORD_WEBHOOK_URL` | Optional | Where approved "moments" post. |
 | `HOST` | Set by Docker | `0.0.0.0` in the container (already set). |
 | `DATA_DIR` | Set by Docker | `/data` — the mounted disk (already set). |
+| `DATABASE_URL` | **Multi-tenant** | Neon Postgres URL. All per-user state lives here. Unset → local SQLite fallback (single-box dev only). |
+| `CREDENTIAL_ENC_KEY` | **Multi-tenant** | Fernet key encrypting users' ESPN cookies at rest. Generate: `python -m fantasy.security.crypto`. Keep it in the host secret store, never in the DB. |
+| `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | **Multi-tenant** | Clerk (managed auth). Publishable for the frontend, secret for backend Clerk API calls. |
+| `CLERK_ISSUER` | Optional | Pin the Clerk issuer/JWKS; otherwise derived from the session token. |
 
 Get your `ESPN_S2` / `ESPN_SWID` from the cookies on espn.com while logged in
 (same values as your local `.env`).
+
+---
+
+## Multi-tenant infrastructure (Neon + Clerk + Fernet)
+
+This app is migrating from single-tenant to a multi-tenant SaaS (see
+`MULTITENANT_BUILD.md`). Per-user state moves from local files into **Neon
+Postgres**, auth is handled by **Clerk**, and each user's ESPN cookies are
+**Fernet-encrypted** with a key kept outside the database.
+
+1. **Neon** → create a project (region: **US East**) and copy the connection
+   string into `DATABASE_URL`. (SQLAlchemy auto-normalizes `postgres://` →
+   `postgresql+psycopg://`.)
+2. **Fernet key** → `python -m fantasy.security.crypto` prints a key; set it as
+   `CREDENTIAL_ENC_KEY`. Losing this key makes stored cookies unrecoverable
+   (users just reconnect). It supports comma-separated keys for rotation.
+3. **Clerk** → create an application, then set `CLERK_PUBLISHABLE_KEY` and
+   `CLERK_SECRET_KEY`.
+4. **Migrations** run automatically on Render via `preDeployCommand`
+   (`alembic upgrade head`). To run them manually: `alembic upgrade head`.
+
+Once on Postgres the app no longer needs the persistent disk for *state* (the
+disk is only for cached model data / generated media). See `MULTITENANT_BUILD.md`
+for the phased plan and hard requirements.
 
 ---
 

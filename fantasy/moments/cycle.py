@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from fantasy.config import settings
+from fantasy.moments.config import content_config as settings  # decoupled from the app
 from fantasy.moments.activity import detect_trades, detect_waivers
 from fantasy.moments.content import render_card, write_caption
 from fantasy.moments.detector import detect_moments

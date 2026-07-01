@@ -19,11 +19,13 @@ import logging
 import threading
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Form, HTTPException, Request, Response
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from fantasy.api import auth, ratelimit
+from fantasy.api.clerk_auth import get_current_user
 from fantasy.config import ExecutionMode, settings
+from fantasy.db.models import User
 from fantasy.leagues import LeagueRef, registry
 from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
@@ -77,6 +79,14 @@ def api_login(request: Request, response: Response, body: dict = Body(...)) -> d
 def api_logout(response: Response) -> dict:
     response.delete_cookie(auth.COOKIE)
     return {"ok": True}
+
+
+@app.get("/api/me")
+def api_me(user: User = Depends(get_current_user)) -> dict:
+    """The authenticated user (Clerk-verified). Provisions the ``users`` row on
+    first login. This is the first route on the new per-user auth path."""
+    return {"id": str(user.id), "clerk_user_id": user.clerk_user_id,
+            "email": user.email, "plan": user.plan}
 
 
 def store() -> Store:

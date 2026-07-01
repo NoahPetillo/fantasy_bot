@@ -153,6 +153,26 @@ class Settings(BaseSettings):
     prioritize_trades: bool = Field(default=True, alias="PRIORITIZE_TRADES")
     data_dir: Path = Field(default=Path("./data"), alias="DATA_DIR")
 
+    # ── Multi-tenant SaaS infrastructure (see MULTITENANT_BUILD.md) ──
+    # Postgres (Neon) connection string. When unset, the app falls back to a
+    # local SQLite file so dev/CI boot without a database — see
+    # ``effective_database_url``. Production MUST set this to the Neon URL.
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+    # Fernet key that encrypts users' ESPN cookies at rest. Held in the host's
+    # secret store, NEVER in the database. Generate with
+    # ``python -m fantasy.security.crypto``. Required before any ESPN cookie is
+    # stored (Phase 2); optional in Phase 1 so the app still boots without it.
+    credential_enc_key: str | None = Field(default=None, alias="CREDENTIAL_ENC_KEY")
+    # Clerk (managed auth). The backend verifies the Clerk session JWT via JWKS on
+    # each request; the secret key is only needed for server-side Clerk API calls
+    # (e.g. email backfill). Set ``clerk_issuer`` (or ``clerk_jwks_url``) so the
+    # JWKS endpoint comes from trusted config — it is NEVER derived from the token
+    # itself (that would allow issuer spoofing). Auth fails closed if unset.
+    clerk_secret_key: str | None = Field(default=None, alias="CLERK_SECRET_KEY")
+    clerk_publishable_key: str | None = Field(default=None, alias="CLERK_PUBLISHABLE_KEY")
+    clerk_jwks_url: str | None = Field(default=None, alias="CLERK_JWKS_URL")
+    clerk_issuer: str | None = Field(default=None, alias="CLERK_ISSUER")
+
     @property
     def espn_swid_braced(self) -> str | None:
         """SWID with surrounding braces, which ESPN expects."""
@@ -168,6 +188,24 @@ class Settings(BaseSettings):
     @property
     def has_espn_auth(self) -> bool:
         return bool(self.espn_s2 and self.espn_swid and self.espn_league_id)
+
+    @property
+    def effective_database_url(self) -> str:
+        """The SQLAlchemy URL to use. Prefers ``DATABASE_URL`` (Neon in prod);
+        falls back to a local SQLite file so dev/CI boot without a database.
+
+        Also normalizes the legacy ``postgres://`` scheme (what some hosts inject)
+        to the ``postgresql+psycopg://`` driver URL SQLAlchemy 2.0 expects.
+        """
+        url = self.database_url
+        if not url:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            return f"sqlite:///{(self.data_dir / 'app.sqlite').as_posix()}"
+        if url.startswith("postgres://"):
+            url = "postgresql+psycopg://" + url[len("postgres://"):]
+        elif url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        return url
 
     @property
     def cache_dir(self) -> Path:

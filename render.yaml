@@ -13,6 +13,9 @@ services:
     plan: starter
     healthCheckPath: /health
     autoDeploy: true
+    # Run database migrations before each deploy goes live (multi-tenant schema
+    # lives in Neon Postgres via Alembic). Safe/no-op when already at head.
+    preDeployCommand: ".venv/bin/alembic upgrade head"
     # Persistent disk for the SQLite store, dashboard snapshots, and media. Mount
     # path matches DATA_DIR in the Dockerfile.
     disk:
@@ -24,6 +27,24 @@ services:
         value: 0.0.0.0
       - key: DATA_DIR
         value: /data
+      # ── Multi-tenant SaaS (see MULTITENANT_BUILD.md) ──────────────────────
+      # Neon Postgres connection string. All per-user state (users, encrypted
+      # ESPN credentials, leagues, snapshots, proposals) lives here.
+      - key: DATABASE_URL
+        sync: false
+      # Fernet key that encrypts users' ESPN cookies at rest — held here in the
+      # secret store, NEVER in the DB. Generate: `python -m fantasy.security.crypto`.
+      - key: CREDENTIAL_ENC_KEY
+        sync: false
+      # Clerk (managed auth). Publishable key is used by the frontend; secret key
+      # by the backend for server-side Clerk API calls.
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      # Optional: pin the Clerk issuer/JWKS (otherwise derived from the token).
+      - key: CLERK_ISSUER
+        sync: false
       # ── The site password (your ask). Set this and the dashboard locks; league
       #    mates still get the chatbot. Leave it unset to keep the site fully open.
       - key: SITE_PASSWORD
