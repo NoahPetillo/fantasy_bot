@@ -24,6 +24,11 @@ models/*.ubj
 # Claude Code local state (machine-specific permission cache)
 .claude/settings.local.json
 
+# Vendored Clerk agent-skill docs (installed by the Clerk CLI; not app code).
+# We track skills-lock.json for reproducibility but not the ~140 doc/template files.
+.agents/
+.claude/skills/
+
 # OS / editor
 .DS_Store
 .ipynb_checkpoints/
@@ -33,3 +38,5 @@ models/*.ubj
 # Playwright
 /test-results/
 /playwright-report/
+
+.env.local

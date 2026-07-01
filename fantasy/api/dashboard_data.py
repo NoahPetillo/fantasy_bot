@@ -50,6 +50,13 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
     espn_proj = client.week_projections(week) if client else None
     fused = fetch_expert_signals()  # corroboration-gated; [] offseason/offline
     board = service.project(season, week, espn_proj=espn_proj, fused_signals=fused)
+    if board.empty and client is not None:
+        # No player data for this (season, week) yet — e.g. the current season
+        # before its weekly stats are published (preseason). There's nothing to
+        # project a lineup/waiver/trade from, so serve the instant shell view
+        # rather than fabricating recommendations from an empty board.
+        log.info("Empty value board for %s wk%s — returning shell view.", season, week)
+        return shell_snapshot(client, league, season, week, my_team_id)
     snap = (build_live_snapshot(client, league, season, week, my_team_id=my_team_id) if client
             else build_dryrun_snapshot(board, league, season, week))
     rem = service.remaining_weeks(week)

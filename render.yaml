@@ -42,12 +42,16 @@ services:
         sync: false
       - key: CLERK_SECRET_KEY
         sync: false
-      # Optional: pin the Clerk issuer/JWKS (otherwise derived from the token).
+      # Optional: pin the Clerk issuer/JWKS (otherwise derived from the publishable key).
       - key: CLERK_ISSUER
         sync: false
-      # ── The site password (your ask). Set this and the dashboard locks; league
-      #    mates still get the chatbot. Leave it unset to keep the site fully open.
-      - key: SITE_PASSWORD
+      # ── Stripe (subscriptions). Secret key + webhook signing secret + the Pro
+      #    plan's price id. Unset → billing disabled (everyone stays on Free).
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
         sync: false
       # ── LLM (powers the chatbot's free-form answers). Set at least one; without
       #    any key the bot falls back to a keyless parser. Mind the cost note in

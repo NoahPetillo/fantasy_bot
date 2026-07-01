@@ -10,14 +10,11 @@ included `Dockerfile` works on both; `render.yaml` is a Render convenience.
 
 ---
 
-## Access model (your password)
+## Access model (Clerk)
 
-- Set **`SITE_PASSWORD`** → the whole dashboard locks behind a login screen.
-- The **chatbot stays open** — league mates use it without the password.
-- Leave `SITE_PASSWORD` unset → the site is fully open (fine for local dev).
-
-Auth is a signed HttpOnly cookie (30 days). Changing `SITE_PASSWORD` instantly
-logs everyone out. See `fantasy/api/auth.py`.
+Auth is **Clerk** (managed) — the shared-password gate was removed. Users sign up /
+sign in via Clerk; the backend verifies the session JWT and scopes every request to
+that user. Plans are **Free** vs **Pro** (Stripe), gating chat quota + league count.
 
 ---
 
@@ -25,8 +22,7 @@ logs everyone out. See `fantasy/api/auth.py`.
 
 | Var | Required? | What it does |
 |-----|-----------|--------------|
-| `SITE_PASSWORD` | **For privacy** | Locks every feature except the chatbot. |
-| `CHAT_RATE_LIMIT` | Optional | Max chatbot questions per visitor IP per hour (default `250`). The logged-in owner is exempt. Set `0` to disable. |
+| `CHAT_RATE_LIMIT` | Optional | Per-IP chatbot abuse floor per hour (default `250`). Per-user plan quotas are enforced separately. Set `0` to disable the floor. |
 | `GROQ_API_KEY` or `ANTHROPIC_API_KEY` | Recommended | Powers the chatbot's free-form answers. Without a key it uses a keyless fallback parser. |
 | `ESPN_S2`, `ESPN_SWID`, `ESPN_LEAGUE_ID` | For live data | Live ESPN reads + the advise scheduler. Without them the app serves snapshots only. |
 | `ESPN_SEASON`, `ESPN_TEAM_ID` | Optional | Defaults to 2025 / first team. |
@@ -36,7 +32,9 @@ logs everyone out. See `fantasy/api/auth.py`.
 | `DATABASE_URL` | **Multi-tenant** | Neon Postgres URL. All per-user state lives here. Unset → local SQLite fallback (single-box dev only). |
 | `CREDENTIAL_ENC_KEY` | **Multi-tenant** | Fernet key encrypting users' ESPN cookies at rest. Generate: `python -m fantasy.security.crypto`. Keep it in the host secret store, never in the DB. |
 | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | **Multi-tenant** | Clerk (managed auth). Publishable for the frontend, secret for backend Clerk API calls. |
-| `CLERK_ISSUER` | Optional | Pin the Clerk issuer/JWKS; otherwise derived from the session token. |
+| `CLERK_ISSUER` | Optional | Pin the Clerk issuer/JWKS; otherwise derived from the publishable key. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | For paid plans | Stripe subscriptions. Unset → billing disabled (everyone stays on Free). |
+| `STRIPE_PRICE_ID` | For paid plans | The recurring price (`price_…`) of the Pro plan created in Stripe. |
 
 Get your `ESPN_S2` / `ESPN_SWID` from the cookies on espn.com while logged in
 (same values as your local `.env`).
@@ -67,13 +65,32 @@ for the phased plan and hard requirements.
 
 ---
 
+## Billing (Stripe — optional; enables the Pro plan)
+
+Without Stripe config everyone stays on **Free** (25 chat questions/day, 1 league).
+To enable **Pro** (1,000/day, 10 leagues — tunable in `fantasy/billing/plans.py`):
+
+1. In Stripe, create a **recurring Product/Price** for Pro and copy its price id
+   (`price_…`) → `STRIPE_PRICE_ID`.
+2. Set `STRIPE_SECRET_KEY` (use `sk_test_…` until you go live).
+3. Add a **webhook endpoint** pointing at `https://<your-app>/api/stripe/webhook`,
+   subscribe to `checkout.session.completed` and `customer.subscription.*`, and set
+   the signing secret as `STRIPE_WEBHOOK_SECRET`.
+
+Checkout + the customer billing portal are created server-side; the webhook keeps
+`users.plan` in sync. Quotas are enforced per user (`chat_usage` table) with the
+per-IP limiter as an anonymous floor.
+
+---
+
 ## Option 1 — Render (recommended, uses `render.yaml`)
 
 1. Push this repo to GitHub.
 2. Render dashboard → **New + → Blueprint** → pick the repo. It reads
    `render.yaml`, builds the `Dockerfile`, and attaches a 1 GB disk at `/data`.
-3. When prompted, fill in the secret env vars (at minimum `SITE_PASSWORD` and one
-   LLM key; add the ESPN cookies for live data).
+3. When prompted, fill in the secret env vars (at minimum `DATABASE_URL`,
+   `CREDENTIAL_ENC_KEY`, the `CLERK_*` keys, and one LLM key; add `STRIPE_*` for paid
+   plans).
 4. Deploy. First build takes a few minutes (the ML wheels are large). When it's
    live, Render gives you a `https://fantasy-app-xxxx.onrender.com` URL.
 
@@ -86,19 +103,27 @@ If you add ESPN cookies and let it train the projection model on startup, bump t
 1. Push to GitHub. Railway → **New Project → Deploy from GitHub repo**. It detects
    the `Dockerfile` automatically.
 2. **Variables** tab → add the env vars from the table (`HOST=0.0.0.0`,
-   `DATA_DIR=/data`, `SITE_PASSWORD`, an LLM key, ESPN cookies).
-3. **Volumes** → add a volume mounted at `/data` (so SQLite + snapshots persist).
-4. Deploy; Railway gives you a public URL under **Settings → Networking**.
+   `DATA_DIR=/data`, `DATABASE_URL`, `CREDENTIAL_ENC_KEY`, the `CLERK_*` keys, an
+   LLM key; add `STRIPE_*` for paid plans).
+3. **Migrations** → run `alembic upgrade head` once against `DATABASE_URL` (Render
+   does this automatically via `preDeployCommand`; on Railway add it as a deploy/
+   release command or run it once from a shell).
+4. **Volumes** → add a volume mounted at `/data` (only for cached model data /
+   generated media now — per-user state lives in Postgres).
+5. Deploy; Railway gives you a public URL under **Settings → Networking**.
 
 ---
 
 ## After it's live
 
-- Visit the URL: you should see the **lock screen**. Enter `SITE_PASSWORD` → the
-  dashboard loads. The chat bubble works without logging in.
-- Health check: `GET /health` returns `{"status":"ok", ...}`.
-- No data yet? The dashboard shows a fallback until a snapshot is built. With ESPN
-  cookies set, add a league in the sidebar and hit **Build full analysis**.
+- Visit the URL: you should see the **Clerk sign-in**. Sign up / sign in → the
+  dashboard loads, scoped to your account. The public chat bubble works without an
+  account (rate-limited per IP).
+- Health check: `GET /health` returns `{"status":"ok", ...}`; `GET /api/config`
+  returns `auth_configured: true` once the `CLERK_*` keys are set.
+- New account: open **Settings → Connect ESPN**, paste your `espn_s2` / `SWID`
+  cookies (consent required), add a league, then hit **Build**. Preseason leagues
+  show a shell view until the season's stats publish.
 
 ---
 

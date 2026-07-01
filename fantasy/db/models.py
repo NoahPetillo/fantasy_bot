@@ -54,6 +54,9 @@ class User(Base):
     leagues: Mapped[list[League]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    subscription: Mapped[Subscription | None] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class EspnCredential(Base):
@@ -173,3 +176,35 @@ class ChatUsage(Base):
     )
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class Subscription(Base):
+    """Stripe subscription state for a user (Phase 5). ``users.plan`` is the
+    denormalized effective plan used for fast quota checks; the webhook keeps both
+    in sync."""
+
+    __tablename__ = "subscriptions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    plan: Mapped[str] = mapped_column(String(32), nullable=False, default="free")
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    user: Mapped[User] = relationship(back_populates="subscription")
+
+
+class WebhookEvent(Base):
+    """Processed Stripe event ids — for webhook idempotency (Stripe retries/replays
+    the same event, so we no-op ones we've already applied)."""
+
+    __tablename__ = "webhook_events"
+
+    event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

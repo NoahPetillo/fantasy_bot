@@ -70,8 +70,14 @@ class ChatContext:
     def weekly(self, season: int | None = None) -> pd.DataFrame:
         s = season or self.season
         if s not in self._cache:
-            df = load_weekly([s])
-            self._cache[s] = df[df["season"] == s].copy() if "season" in df.columns else df
+            try:
+                df = load_weekly([s])
+                self._cache[s] = df[df["season"] == s].copy() if "season" in df.columns else df
+            except Exception as e:  # noqa: BLE001
+                # Season data may not exist yet (offseason) or be unreachable — degrade
+                # to empty so player lookups just miss instead of crashing the chat.
+                logging.getLogger(__name__).warning("weekly stats for %s unavailable: %s", s, e)
+                self._cache[s] = pd.DataFrame()
         return self._cache[s]
 
     def engine(self) -> ScoringEngine | None:
@@ -108,6 +114,11 @@ _INDEX_CACHE: dict = {}
 def _player_index(df: pd.DataFrame) -> dict:
     """Cached lookup over a season's players: full names + first/last tokens, each
     pointing at the highest-games (gsis, display) so name collisions favor the star."""
+    # No stats loaded (e.g. offseason: this season's data doesn't exist yet) — return
+    # an empty index so player lookups miss cleanly and snapshot-only questions
+    # (scoring rules, projections) still answer.
+    if df is None or len(df) == 0 or {"player_id", "player_display_name"} - set(df.columns):
+        return {"full": {}, "firsts": {}, "lasts": {}}
     season = int(df["season"].iloc[0]) if "season" in df.columns and len(df) else id(df)
     if season in _INDEX_CACHE:
         return _INDEX_CACHE[season]

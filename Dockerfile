@@ -34,6 +34,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY fantasy ./fantasy
 COPY config ./config
 COPY scripts ./scripts
+# Alembic config + migration scripts must be in the image so Render's
+# preDeployCommand (`.venv/bin/alembic upgrade head`) can run against Neon.
+COPY alembic.ini ./
+COPY migrations ./migrations
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 

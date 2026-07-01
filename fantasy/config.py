@@ -46,7 +46,9 @@ class ExecutionBackend(str, Enum):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+        # .env.local is where `clerk env pull` writes its keys; it takes precedence.
+        env_file=(".env", ".env.local"), env_file_encoding="utf-8",
+        extra="ignore", case_sensitive=False,
     )
 
     # ── ESPN ──
@@ -161,12 +163,22 @@ class Settings(BaseSettings):
     # (e.g. email backfill). Set ``clerk_issuer`` (or ``clerk_jwks_url``) so the
     # JWKS endpoint comes from trusted config — it is NEVER derived from the token
     # itself (that would allow issuer spoofing). Auth fails closed if unset.
-    clerk_secret_key: str | None = Field(default=None, alias="CLERK_SECRET_KEY")
-    clerk_publishable_key: str | None = Field(default=None, alias="CLERK_PUBLISHABLE_KEY")
+    # Accept whichever variable name the Clerk CLI / host writes.
+    clerk_secret_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("CLERK_SECRET_KEY", "CLERK_API_KEY"))
+    clerk_publishable_key: str | None = Field(
+        default=None, validation_alias=AliasChoices(
+            "CLERK_PUBLISHABLE_KEY", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+            "VITE_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE"))
     clerk_jwks_url: str | None = Field(default=None, alias="CLERK_JWKS_URL")
     clerk_issuer: str | None = Field(default=None, alias="CLERK_ISSUER")
     # Product name shown in the consent screen / legal copy (fills [PRODUCT_NAME]).
     product_name: str = Field(default="Fantasy Copilot", alias="PRODUCT_NAME")
+    # Stripe (Phase 5 — subscriptions). Secret key for API calls, webhook secret to
+    # verify events, price id of the Pro plan. Unset → billing disabled (free only).
+    stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
+    stripe_webhook_secret: str | None = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
+    stripe_price_id: str | None = Field(default=None, alias="STRIPE_PRICE_ID")
 
     @property
     def espn_swid_braced(self) -> str | None:

@@ -19,6 +19,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 from jwt import PyJWKClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fantasy.config import settings
@@ -133,7 +134,16 @@ def get_or_create_user(db: Session, clerk_user_id: str, email: str | None = None
     if user is None:
         user = User(clerk_user_id=clerk_user_id, email=email)
         db.add(user)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # A concurrent first-login request inserted this user between our SELECT
+            # and INSERT (the frontend fires several requests at once). Recover by
+            # returning the row the other request created.
+            db.rollback()
+            return db.execute(
+                select(User).where(User.clerk_user_id == clerk_user_id)
+            ).scalar_one()
         db.refresh(user)
         log.info("Provisioned new user for Clerk id %s", clerk_user_id)
         return user

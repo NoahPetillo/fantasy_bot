@@ -4,7 +4,7 @@
     {
       "name": "dashboard",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "fantasy.api.app:app", "--host", "127.0.0.1", "--port", "8011"],
+      "runtimeArgs": ["run", "uvicorn", "fantasy.api.app:app", "--host", "127.0.0.1", "--port", "8011", "--reload"],
       "port": 8011
     },
     {
