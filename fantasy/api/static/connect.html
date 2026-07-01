@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Connect your ESPN account</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --line: #262b36; --text: #e7ebf0;
+    --muted: #9aa4b2; --accent: #d64d2f; --accent2: #2f7de0; --ok: #35c07f; --err: #e0574b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 40px 20px 64px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h3 { font-size: 18px; margin: 20px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .copy p { margin: 10px 0; }
+  .copy code { background: #0d0f13; border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 5px; font-size: 13px; }
+  .copy a { color: var(--accent2); }
+  label.field { display: block; margin: 14px 0 4px; color: var(--muted); font-size: 13px; }
+  input[type=text] { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
+    background: #0d0f13; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .consent { display: flex; gap: 10px; align-items: flex-start; margin: 22px 0 6px;
+    padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f13; }
+  .consent input { margin-top: 3px; width: 17px; height: 17px; flex: none; }
+  .consent label { color: var(--text); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  button { border: 0; border-radius: 9px; padding: 11px 18px; font-weight: 600; font-size: 14px;
+    cursor: pointer; color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #connectBtn { background: var(--accent); }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  .danger { background: transparent; border: 1px solid var(--err); color: var(--err); }
+  #msg { margin-top: 16px; padding: 12px 14px; border-radius: 9px; font-size: 14px; display: none; }
+  #msg.ok { display: block; background: rgba(53,192,127,.12); border: 1px solid var(--ok); color: #b9f0d4; }
+  #msg.err { display: block; background: rgba(224,87,75,.12); border: 1px solid var(--err); color: #f4c2bd; }
+  #status { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  .leagues { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .leagues li { color: var(--text); }
+  footer { color: var(--muted); font-size: 12px; margin-top: 26px; text-align: center; line-height: 1.5; }
+  details { margin-top: 22px; } summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+  details input { margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Connect your ESPN account</h1>
+    <p class="sub">One-time setup so we can read your league data on your behalf.</p>
+
+    <div id="status"><span class="dot" id="statusDot"></span><span id="statusText">Checking…</span></div>
+
+    <div class="copy" id="consentCopy">Loading…</div>
+
+    <label class="field" for="s2">espn_s2</label>
+    <input type="text" id="s2" autocomplete="off" spellcheck="false" placeholder="paste your espn_s2 cookie" />
+    <label class="field" for="swid">SWID</label>
+    <input type="text" id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-...}" />
+
+    <div class="consent">
+      <input type="checkbox" id="consentCheck" />
+      <label for="consentCheck" id="consentLabel">I understand and consent.</label>
+    </div>
+
+    <div class="row">
+      <button id="connectBtn" disabled>Connect ESPN</button>
+      <button id="testBtn" class="ghost" style="display:none">Test connection</button>
+      <button id="disconnectBtn" class="danger" style="display:none">Disconnect</button>
+    </div>
+
+    <div id="msg"></div>
+    <div class="leagues" id="leagues"></div>
+
+    <details>
+      <summary>Developer: paste a Clerk session token (temporary — Phase 4 adds sign-in)</summary>
+      <input type="text" id="devToken" placeholder="Bearer token" style="width:100%" />
+    </details>
+  </div>
+  <footer>
+    Not affiliated with, authorized, or endorsed by ESPN or The Walt Disney Company.<br/>
+    <a href="/privacy" style="color:var(--muted)">Privacy</a> · <a href="/terms" style="color:var(--muted)">Terms</a>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let CONSENT_VERSION = null;
+
+// Minimal, safe markdown → HTML for the consent copy (escape first, then a small subset).
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function inline(s){
+  return esc(s)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m,t,u)=>`<a href="${u}">${t}</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function renderConsent(md){
+  const lines = md.split("\n");
+  let html = "", checkboxLabel = null, para = [];
+  const flush = () => { if (para.length){ html += `<p>${inline(para.join(" "))}</p>`; para=[]; } };
+  for (const raw of lines){
+    const line = raw.trimEnd();
+    if (/^\s*-\s*\[\s*\]/.test(line)) { checkboxLabel = line.replace(/^\s*-\s*\[\s*\]\s*/, ""); continue; }
+    if (/\[\s*Connect ESPN\s*\]/i.test(line)) continue; // our real button replaces this
+    if (line.startsWith("### ")) { flush(); html += `<h3>${inline(line.slice(4))}</h3>`; }
+    else if (line.trim() === "") flush();
+    else para.push(line.trim());
+  }
+  flush();
+  $("consentCopy").innerHTML = html;
+  if (checkboxLabel) $("consentLabel").innerHTML = inline(checkboxLabel);
+}
+
+function token(){ return ($("devToken").value || localStorage.getItem("clerk_dev_token") || "").trim(); }
+function authHeaders(extra){
+  const h = Object.assign({ "Content-Type": "application/json" }, extra || {});
+  const t = token(); if (t) h["Authorization"] = "Bearer " + t;
+  return h;
+}
+async function api(method, path, body){
+  const res = await fetch(path, { method, headers: authHeaders(),
+    credentials: "same-origin", body: body ? JSON.stringify(body) : undefined });
+  let data = {}; try { data = await res.json(); } catch(_) {}
+  if (!res.ok) throw new Error(data.detail || (res.status === 401 ? "Please sign in first." : "Request failed."));
+  return data;
+}
+function msg(text, ok){ const m = $("msg"); m.textContent = text; m.className = ok ? "ok" : "err"; }
+function showLeagues(list){
+  if (!list || !list.length){ $("leagues").innerHTML = ""; return; }
+  $("leagues").innerHTML = "Leagues found: <ul>" +
+    list.map(l => `<li>${esc(l.name || ("League " + l.league_id))}${l.season ? " ("+l.season+")" : ""}</li>`).join("") + "</ul>";
+}
+
+function updateConnectEnabled(){
+  $("connectBtn").disabled = !($("consentCheck").checked && $("s2").value.trim() && $("swid").value.trim());
+}
+
+async function refreshStatus(){
+  try {
+    const s = await api("GET", "/api/espn/status");
+    const connected = !!s.connected;
+    $("statusDot").className = "dot" + (connected ? " on" : "");
+    $("statusText").textContent = connected
+      ? `Connected (consent ${s.consent_version || "?"})` : "Not connected";
+    $("testBtn").style.display = connected ? "" : "none";
+    $("disconnectBtn").style.display = connected ? "" : "none";
+  } catch (e){
+    $("statusDot").className = "dot";
+    $("statusText").textContent = e.message;
+  }
+}
+
+async function loadConsent(){
+  try {
+    const c = await api("GET", "/api/legal/espn-consent");
+    CONSENT_VERSION = c.version;
+    renderConsent(c.markdown || "");
+  } catch (e){ $("consentCopy").textContent = "Couldn't load the consent notice."; }
+}
+
+$("consentCheck").addEventListener("change", updateConnectEnabled);
+$("s2").addEventListener("input", updateConnectEnabled);
+$("swid").addEventListener("input", updateConnectEnabled);
+$("devToken").addEventListener("change", () => {
+  localStorage.setItem("clerk_dev_token", $("devToken").value.trim()); refreshStatus();
+});
+
+$("connectBtn").addEventListener("click", async () => {
+  $("connectBtn").disabled = true;
+  try {
+    const r = await api("POST", "/api/espn/connect", {
+      espn_s2: $("s2").value.trim(), swid: $("swid").value.trim(),
+      consent: true, consent_version: CONSENT_VERSION });
+    msg("ESPN connected. Your cookies are encrypted and stored.", true);
+    $("s2").value = ""; $("swid").value = "";
+    showLeagues(r.leagues_found);
+    await refreshStatus();
+  } catch (e){ msg(e.message, false); }
+  updateConnectEnabled();
+});
+
+$("testBtn").addEventListener("click", async () => {
+  try {
+    const r = await api("POST", "/api/espn/test");
+    if (r.valid){ msg("Connection is working.", true); showLeagues(r.leagues_found); }
+    else msg(r.purged ? "Cookies are no longer valid and were removed. Please reconnect."
+                      : "Cookies are no longer valid — please reconnect.", false);
+    await refreshStatus();
+  } catch (e){ msg(e.message, false); }
+});
+
+$("disconnectBtn").addEventListener("click", async () => {
+  if (!confirm("Remove your stored ESPN credentials?")) return;
+  try { await api("DELETE", "/api/espn/credentials"); msg("ESPN credentials removed.", true);
+    showLeagues([]); await refreshStatus(); }
+  catch (e){ msg(e.message, false); }
+});
+
+const saved = localStorage.getItem("clerk_dev_token"); if (saved) $("devToken").value = saved;
+loadConsent(); refreshStatus(); updateConnectEnabled();
+</script>
+</body>
+</html>

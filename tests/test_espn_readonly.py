@@ -20,11 +20,15 @@ _WRITE_VERBS = ("post", "put", "patch", "delete")
 
 
 def test_client_source_has_no_http_write_verbs():
-    src = inspect.getsource(espn_client)
-    for verb in _WRITE_VERBS:
-        # e.g. requests.post( / session.put( / .patch(
-        assert not re.search(rf"\.{verb}\s*\(", src), f"ESPN client must not call .{verb}()"
-    assert re.search(r"requests\.get\s*\(", src), "expected the client to use requests.get"
+    from fantasy.espn import account as espn_account
+
+    for mod in (espn_client, espn_account):
+        src = inspect.getsource(mod)
+        for verb in _WRITE_VERBS:
+            # e.g. requests.post( / session.put( / .patch(
+            assert not re.search(rf"\.{verb}\s*\(", src), \
+                f"{mod.__name__} must not call .{verb}()"
+        assert re.search(r"requests\.get\s*\(", src), f"expected {mod.__name__} to use requests.get"
 
 
 def test_client_exposes_no_write_methods():

@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from fantasy.api import auth, ratelimit
 from fantasy.api.clerk_auth import get_current_user
+from fantasy.api.espn_routes import router as espn_router
 from fantasy.config import ExecutionMode, settings
 from fantasy.db.models import User
 from fantasy.leagues import LeagueRef, registry
@@ -31,10 +32,12 @@ from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
 
 _STATIC = Path(__file__).resolve().parent / "static" / "dashboard.html"
+_CONNECT_STATIC = Path(__file__).resolve().parent / "static" / "connect.html"
 
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="Fantasy App", version="0.1.0")
+app.include_router(espn_router)  # per-user connect-ESPN + account endpoints
 _store: Store | None = None
 # league_id (str) -> "building" | "done" | "error: ..."
 _build_status: dict[str, str] = {}
@@ -215,6 +218,13 @@ async def slack_interactions(payload: str = Form(...)) -> dict:
 @app.get("/", response_class=HTMLResponse)
 def index():
     return FileResponse(_STATIC)
+
+
+@app.get("/connect", response_class=HTMLResponse)
+def connect_page():
+    """The Connect-ESPN consent screen (shell only; the API calls it makes are
+    Clerk-authenticated). Full Clerk sign-in wraps this in Phase 4."""
+    return FileResponse(_CONNECT_STATIC)
 
 
 def _fallback_payload() -> dict:

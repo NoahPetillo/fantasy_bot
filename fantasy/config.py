@@ -172,6 +172,8 @@ class Settings(BaseSettings):
     clerk_publishable_key: str | None = Field(default=None, alias="CLERK_PUBLISHABLE_KEY")
     clerk_jwks_url: str | None = Field(default=None, alias="CLERK_JWKS_URL")
     clerk_issuer: str | None = Field(default=None, alias="CLERK_ISSUER")
+    # Product name shown in the consent screen / legal copy (fills [PRODUCT_NAME]).
+    product_name: str = Field(default="Fantasy Copilot", alias="PRODUCT_NAME")
 
     @property
     def espn_swid_braced(self) -> str | None:

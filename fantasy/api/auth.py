@@ -40,6 +40,10 @@ TTL = 30 * 86400  # cookie lifetime: 30 days
 _PUBLIC_EXACT = {
     "/", "/health", "/api/chat", "/api/login", "/api/logout", "/api/session",
     "/slack/interactions", "/favicon.ico", "/openapi.json", "/docs", "/redoc",
+    # Connect-ESPN shell + the consent disclosure copy. The shell carries no data
+    # and its API calls are Clerk-authenticated; the consent copy is public by
+    # design (it's the disclosure shown before anything is stored).
+    "/connect", "/api/legal/espn-consent",
 }
 _PUBLIC_PREFIX = ("/static/",)
 
