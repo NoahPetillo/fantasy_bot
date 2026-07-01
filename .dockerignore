@@ -1,0 +1,22 @@
+# Keep the build context lean and — critically — keep secrets/local state OUT of
+# the image. .env must never be baked in; configure env vars in the host instead.
+.env
+.env.*
+.git
+.gitignore
+.venv
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+**/.DS_Store
+
+# Local runtime state — the production disk provides a fresh DATA_DIR; don't ship
+# your local league snapshots / SQLite / cached media into the image.
+data/
+
+# Not needed at runtime.
+tests/
+.claude/

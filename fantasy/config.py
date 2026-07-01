@@ -122,6 +122,20 @@ class Settings(BaseSettings):
     # e.g. CONTENT_RIVALRIES='[["Maye shots","Emeka the Freaka"],["6","9"]]'
     content_rivalries: list[list[str]] | None = Field(default=None, alias="CONTENT_RIVALRIES")
 
+    # ── Web access (shared-password gate) ──
+    # When set, every web feature EXCEPT the chatbot requires this password. Leave
+    # unset for local dev (gate stays OFF — the app behaves exactly as before). Set
+    # it in the deploy environment so league mates only get the chatbot and the rest
+    # of the dashboard stays private. Auth is a stateless signed cookie; see
+    # fantasy/api/auth.py. Rotating the password invalidates all existing sessions.
+    site_password: str | None = Field(default=None, alias="SITE_PASSWORD")
+    # The chatbot is public (league mates use it without the password), so cap
+    # anonymous questions per client IP per window to stop hammering. The
+    # authenticated owner is exempt. Set CHAT_RATE_LIMIT=0 to disable. Generous by
+    # default — tuned for a league, not a bill.
+    chat_rate_limit: int = Field(default=250, alias="CHAT_RATE_LIMIT")
+    chat_rate_window_seconds: int = Field(default=3600, alias="CHAT_RATE_WINDOW_SECONDS")
+
     # ── Runtime ──
     execution_mode: ExecutionMode = Field(default=ExecutionMode.advise, alias="EXECUTION_MODE")
     execution_backend: ExecutionBackend = Field(

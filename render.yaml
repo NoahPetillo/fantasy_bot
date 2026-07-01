@@ -1,0 +1,52 @@
+# Render Blueprint — one-click-ish deploy. In the Render dashboard:
+#   New + → Blueprint → point at this repo. Render reads this file, builds the
+#   Dockerfile, attaches the disk, and prompts for the secret env vars below.
+# (Railway doesn't use this file — it reads the Dockerfile directly. See DEPLOY.md.)
+services:
+  - type: web
+    name: fantasy-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # starter = 512 MB / $7-ish per month: plenty for serving the dashboard +
+    # chatbot. Bump to "standard" (2 GB) if you add ESPN cookies and let it train
+    # the projection model on startup.
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    # Persistent disk for the SQLite store, dashboard snapshots, and media. Mount
+    # path matches DATA_DIR in the Dockerfile.
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: /data
+      # ── The site password (your ask). Set this and the dashboard locks; league
+      #    mates still get the chatbot. Leave it unset to keep the site fully open.
+      - key: SITE_PASSWORD
+        sync: false
+      # ── LLM (powers the chatbot's free-form answers). Set at least one; without
+      #    any key the bot falls back to a keyless parser. Mind the cost note in
+      #    DEPLOY.md — the chatbot is public.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # ── ESPN live access (optional). Without these the app serves whatever is in
+      #    the action log / snapshots and skips the live scheduler.
+      - key: ESPN_S2
+        sync: false
+      - key: ESPN_SWID
+        sync: false
+      - key: ESPN_LEAGUE_ID
+        sync: false
+      - key: ESPN_SEASON
+        sync: false
+      - key: ESPN_TEAM_ID
+        sync: false
+      # ── Content engine (optional): where approved "moments" get posted.
+      - key: DISCORD_WEBHOOK_URL
+        sync: false

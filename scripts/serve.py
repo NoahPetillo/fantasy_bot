@@ -11,6 +11,7 @@ whatever is already in the action log (use scripts/run_cycle.py to populate it).
 from __future__ import annotations
 
 import logging
+import os
 
 import uvicorn
 
@@ -49,4 +50,8 @@ async def _startup():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # Bind 127.0.0.1:8000 locally; cloud hosts (Render/Railway/Fly) inject PORT and
+    # need 0.0.0.0 (set HOST=0.0.0.0 in the container — see the Dockerfile).
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

@@ -217,12 +217,50 @@
     border-radius:50%;display:inline-block;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
 
+  /* Lock screen (shown when a site password is set and this browser isn't unlocked) */
+  #lockscreen{display:none;position:fixed;inset:0;z-index:50;place-items:center;padding:24px;
+    background:radial-gradient(1200px 600px at 80% -10%,rgba(59,130,246,.12),transparent 60%),var(--bg)}
+  body.locked #lockscreen{display:grid}
+  body.locked .app{display:none}
+  .lockcard{width:100%;max-width:380px;text-align:center;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line-strong);
+    border-radius:var(--radius);padding:30px 28px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .lockcard .logo{width:46px;height:46px;border-radius:13px;margin:0 auto 16px;
+    background:linear-gradient(135deg,var(--blue),var(--violet));display:grid;place-items:center;
+    box-shadow:0 0 26px rgba(59,130,246,.5)}
+  .lockcard h2{margin:0 0 6px;font-size:19px;font-weight:600}
+  .lockcard p{margin:0 0 20px;color:var(--muted);font-size:13.5px}
+  .lockcard input{width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--line-strong);
+    background:var(--panel-2);color:var(--text);font-size:14px;font-family:var(--mono);text-align:center}
+  .lockcard input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+  .lockcard button{width:100%;margin-top:12px;padding:11px;border-radius:10px;border:none;cursor:pointer;
+    background:var(--blue);color:#fff;font-size:14px;font-weight:600;font-family:inherit}
+  .lockcard button:hover{background:#2f74e6}
+  .lockcard .lk-err{color:var(--red);font-size:12.5px;min-height:17px;margin-top:10px}
+  .lockcard .lk-hint{color:var(--faint);font-size:12px;margin-top:16px}
+  .btn-ghost{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.8px;
+    padding:5px 11px;border-radius:999px;border:1px solid var(--line-strong);color:var(--muted);
+    background:none;cursor:pointer}
+  .btn-ghost:hover{color:var(--text);border-color:var(--blue)}
+
   @media (max-width:1000px){.app{grid-template-columns:1fr}.side{display:none}.kpis{grid-template-columns:1fr 1fr}
     .cols-2{grid-template-columns:1fr}.tiles{grid-template-columns:1fr 1fr}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
 </style>
 </head>
 <body>
+<div id="lockscreen">
+  <div class="lockcard">
+    <div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+    <h2>Gridiron Command</h2>
+    <p>Enter the password to access the dashboard.</p>
+    <input type="password" id="lock-pw" placeholder="Password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')submitPassword()" />
+    <button onclick="submitPassword()">Unlock</button>
+    <div class="lk-err" id="lock-err"></div>
+    <div class="lk-hint">No password? Just ask the bot — tap the chat bubble, bottom-right.</div>
+  </div>
+</div>
 <div class="app">
   <aside class="side">
     <div class="brand">
@@ -272,6 +310,7 @@
         <span class="pill amber" id="weekpill">WEEK —</span>
         <span class="pill" id="modepill">ADVISE</span>
         <button class="primary" onclick="refresh()">Refresh</button>
+        <button class="btn-ghost" id="lockbtn" style="display:none" onclick="lockSite()">Lock</button>
       </div>
     </div>
 
@@ -386,7 +425,9 @@ let LEAGUES = [];
 
 async function refresh(){
   const q = ACTIVE_LEAGUE!=null ? ('?league='+ACTIVE_LEAGUE) : '';
-  const d = await (await fetch('/api/dashboard'+q)).json();
+  const res = await fetch('/api/dashboard'+q);
+  if(res.status===401){ showLock(); return; }
+  const d = await res.json();
   window.CUR = d; STATUSES = d.statuses || {};
   renderBanner(d);
   renderInfluence(d.influence);
@@ -541,11 +582,17 @@ async function askChat(preset){
   chatBubble('u', esc(q));
   const out=chatBubble('b','<span style="color:var(--faint)">…thinking</span>');
   try{
-    const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:q, league:ACTIVE_LEAGUE})})).json();
-    const src=(r.tools_used&&r.tools_used.length)
-      ? `<span class="src">via ${esc([...new Set(r.tools_used)].join(', '))}${r.mode&&r.mode.indexOf('fallback')>=0?' · offline':''}</span>` : '';
-    out.innerHTML=esc(r.answer||'No answer.')+src;
+    const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:q, league:ACTIVE_LEAGUE})});
+    if(resp.status===429){
+      const j=await resp.json().catch(()=>({}));
+      out.innerHTML=`<span style="color:var(--amber)">${esc(j.detail||'Too many questions — take a breather and try again later.')}</span>`;
+    }else{
+      const r=await resp.json();
+      const src=(r.tools_used&&r.tools_used.length)
+        ? `<span class="src">via ${esc([...new Set(r.tools_used)].join(', '))}${r.mode&&r.mode.indexOf('fallback')>=0?' · offline':''}</span>` : '';
+      out.innerHTML=esc(r.answer||'No answer.')+src;
+    }
   }catch(e){ out.innerHTML='<span style="color:var(--red)">Chat is unavailable right now.</span>'; }
   document.getElementById('chat-log').scrollTop=1e9;
 }
@@ -595,7 +642,9 @@ async function confirmEspn(id){
 
 // ── multi-league switcher ──────────────────────────────────────────────────
 async function loadLeagues(){
-  const d=await (await fetch('/api/leagues')).json();
+  const res=await fetch('/api/leagues');
+  if(res.status===401){ showLock(); return; }
+  const d=await res.json();
   LEAGUES=d.leagues||[];
   if(ACTIVE_LEAGUE==null) ACTIVE_LEAGUE=d.active;
   renderLeagues();
@@ -683,9 +732,36 @@ async function analyze(){
   v.innerHTML=`<div class="big" style="color:${good?'var(--green)':'var(--red)'}">${good?'Favorable':'Unfavorable'} — ROS VOR ${r.net>0?'+':''}${r.net}</div>
     <div class="reason">Give <b>${esc(give)}</b> (VOR ${r.give_vor}) for <b>${esc(get)}</b> (VOR ${r.get_vor}). Market fairness: ${esc(r.fairness)}.</div>`;
 }
-renderChips();
-document.getElementById('chat-fab').innerHTML = icon('chat');
-loadLeagues().then(refresh);
+// ── password gate ──────────────────────────────────────────────────────────
+let GATE_ENABLED = false;
+function showLock(){ document.body.classList.add('locked');
+  setTimeout(()=>{const i=document.getElementById('lock-pw'); if(i) i.focus();}, 60); }
+function hideLock(){ document.body.classList.remove('locked'); }
+function enterDashboard(){ hideLock();
+  document.getElementById('lockbtn').style.display = GATE_ENABLED ? '' : 'none';
+  loadLeagues().then(refresh); }
+async function submitPassword(){
+  const inp=document.getElementById('lock-pw'), err=document.getElementById('lock-err');
+  err.textContent=''; const pw=inp.value;
+  if(!pw){ err.textContent='Enter the password'; return; }
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:pw})});
+    if(r.ok){ inp.value=''; enterDashboard(); }
+    else { err.textContent='Incorrect password'; inp.select(); }
+  }catch(e){ err.textContent='Login failed — try again.'; }
+}
+async function lockSite(){ try{ await fetch('/api/logout',{method:'POST'}); }catch(e){} showLock(); }
+async function boot(){
+  renderChips();
+  document.getElementById('chat-fab').innerHTML = icon('chat');
+  let s={gate_enabled:false, authed:true};
+  try{ s = await (await fetch('/api/session')).json(); }catch(e){}
+  GATE_ENABLED = !!s.gate_enabled;
+  if(s.gate_enabled && !s.authed) showLock();
+  else enterDashboard();
+}
+boot();
 </script>
 </body>
 </html>

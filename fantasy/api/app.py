@@ -19,9 +19,10 @@ import logging
 import threading
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Form, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import Body, FastAPI, Form, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from fantasy.api import auth, ratelimit
 from fantasy.config import ExecutionMode, settings
 from fantasy.leagues import LeagueRef, registry
 from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
@@ -39,11 +40,61 @@ _build_status: dict[str, str] = {}
 registry().seed_default()  # bootstrap the .env league into the registry on first run
 
 
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next):
+    """Shared-password gate. When a password is configured, every path except the
+    public allowlist (chatbot, login, health, static shell) requires a valid
+    session cookie; otherwise it's a no-op. See fantasy/api/auth.py."""
+    if auth.gate_enabled() and not auth.is_public(request.url.path):
+        if not auth.valid_token(request.cookies.get(auth.COOKIE)):
+            return JSONResponse({"detail": "password required"}, status_code=401)
+    return await call_next(request)
+
+
+@app.get("/api/session")
+def api_session(request: Request) -> dict:
+    """Tells the frontend whether a password is required and whether this browser
+    is already unlocked — so it can show the lock screen or the full dashboard."""
+    authed = not auth.gate_enabled() or auth.valid_token(request.cookies.get(auth.COOKIE))
+    return {"gate_enabled": auth.gate_enabled(), "authed": authed}
+
+
+@app.post("/api/login")
+def api_login(request: Request, response: Response, body: dict = Body(...)) -> dict:
+    """Exchange the shared password for a signed session cookie."""
+    if not auth.gate_enabled():
+        return {"ok": True, "note": "no password configured — site is open"}
+    if not auth.check_password(str(body.get("password") or "")):
+        raise HTTPException(401, "incorrect password")
+    # Secure cookie only over https (so it still works on plain-http localhost).
+    secure = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    response.set_cookie(auth.COOKIE, auth.issue_token(), max_age=auth.TTL,
+                        httponly=True, samesite="lax", secure=secure)
+    return {"ok": True}
+
+
+@app.post("/api/logout")
+def api_logout(response: Response) -> dict:
+    response.delete_cookie(auth.COOKIE)
+    return {"ok": True}
+
+
 def store() -> Store:
     global _store
     if _store is None:
         _store = Store()
     return _store
+
+
+_chat_limiter: ratelimit.RateLimiter | None = None
+
+
+def chat_limiter() -> ratelimit.RateLimiter:
+    global _chat_limiter
+    if _chat_limiter is None:
+        _chat_limiter = ratelimit.RateLimiter(settings.chat_rate_limit,
+                                              settings.chat_rate_window_seconds)
+    return _chat_limiter
 
 
 def on_approved(p: Proposal) -> None:
@@ -269,9 +320,19 @@ def api_dashboard(league: int | None = None) -> dict:
 
 
 @app.post("/api/chat")
-def api_chat(body: dict = Body(...)) -> dict:
+def api_chat(request: Request, body: dict = Body(...)) -> dict:
     """NFL/league Q&A. Routes the question to deterministic data tools (real
-    nflverse stats + our projections + league scoring); the model only phrases."""
+    nflverse stats + our projections + league scoring); the model only phrases.
+
+    Public so league mates can use it without the password — but anonymous callers
+    are rate-limited per IP. The authenticated owner (valid session cookie) is
+    exempt."""
+    if not auth.valid_token(request.cookies.get(auth.COOKIE)):
+        allowed, retry = chat_limiter().check(ratelimit.client_ip(request))
+        if not allowed:
+            mins = max(1, retry // 60)
+            raise HTTPException(429, f"Too many questions — try again in about {mins} min.",
+                                headers={"Retry-After": str(retry)})
     from fantasy.api.dashboard_data import read_snapshot
     from fantasy.chat.agent import answer
     from fantasy.chat.tools import ChatContext
