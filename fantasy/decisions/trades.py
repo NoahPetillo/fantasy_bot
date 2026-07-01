@@ -17,10 +17,15 @@ import math
 
 import pandas as pd
 
-from fantasy.decisions.lineup import lineup_value
+from fantasy.decisions.lineup import greedy_lineup, lineup_value
 from fantasy.league_settings import LeagueSettings
 from fantasy.league_state import LeagueSnapshot
 from fantasy.orchestrator.models import Proposal, ProposalKind
+
+# Bench players only score when a starter is hurt/on bye, so surplus depth is
+# worth a fraction of a starter's ROS value. Used to price the depth a package
+# trade gains or gives up — kept small and reported separately from lineup gain.
+DEPTH_WEIGHT = 0.15
 
 
 def _accept_prob(opp_gain: float, opp_value_swing: float) -> float:
@@ -101,3 +106,101 @@ def recommend_trades(
         if len(props) >= top_k:
             break
     return props
+
+
+def _depth_value(roster: list[str], starters: set[str], ros_vor: dict[str, float]) -> float:
+    """Insurance value of the surplus (non-starting) players on a roster: a small
+    fraction of each bench body's ROS VOR. A below-replacement body (VOR < 0) is
+    worth ~0 as depth, so we clip at 0."""
+    return DEPTH_WEIGHT * sum(max(0.0, ros_vor.get(p, 0.0)) for p in roster if p not in starters)
+
+
+def evaluate_trade_package(
+    my_roster: list[str], counter_roster: list[str] | None,
+    give: list[str], get: list[str],
+    ros: dict[str, float], ros_vor: dict[str, float], pos: dict[str, str],
+    league: LeagueSettings, bench_size: int, ir_size: int = 0,
+    single_counterparty: bool = True, names: dict[str, str] | None = None,
+) -> dict:
+    """Evaluate an arbitrary N-for-M trade for MY team, roster-fit-aware.
+
+    The headline is the change in my best legal STARTING lineup over the rest of
+    the season (``lineup_delta``), computed with the same greedy engine as the
+    auto-suggester. Because a lineup only rewards players who crack a starting
+    slot, acquiring two players when you can only start one adds far less than the
+    raw point sum — and a single "big hitter" who takes a slot can be worth more
+    than two who ride the bench. Depth (bench insurance) and cross-positional
+    value (VOR) are reported alongside so the trade-off is visible, not hidden.
+
+    All maps are expected ROS-scaled (proj/vor × remaining weeks). ``ros``/``ros_vor``
+    default to 0.0 for players without a projection (many K/DST/rookies).
+    """
+    names = names or {}
+    give_set, get_set = set(give), set(get)
+    before = [p for p in my_roster]
+    after = [p for p in before if p not in give_set] + list(get)
+
+    lineup_before, starters_before = greedy_lineup(ros, pos, before, league)
+    lineup_after, starters_after = greedy_lineup(ros, pos, after, league)
+    lineup_delta = round(lineup_after - lineup_before, 1)
+
+    give_pts = sum(ros.get(a, 0.0) for a in give)
+    get_pts = sum(ros.get(c, 0.0) for c in get)
+    give_vor = sum(ros_vor.get(a, 0.0) for a in give)
+    get_vor = sum(ros_vor.get(c, 0.0) for c in get)
+    points_sum_delta = round(get_pts - give_pts, 1)
+    vor_delta = round(get_vor - give_vor, 1)
+
+    depth_delta = round(_depth_value(after, starters_after, ros_vor)
+                        - _depth_value(before, starters_before, ros_vor), 1)
+
+    diff = abs(vor_delta)
+    fairness = "even" if diff <= 3 else ("slightly lopsided" if diff <= 8 else "lopsided")
+
+    # Full roster capacity, incl. IR — snap rosters count IR players, so the cap must too,
+    # else every trade in an IR league would falsely read as over the limit.
+    cap = league.roster.total_starters + bench_size + ir_size
+    need_to_drop = max(0, (len(my_roster) - len(give) + len(get)) - cap)
+
+    accept_prob = None
+    if single_counterparty and counter_roster:
+        opp_before = lineup_value(ros, pos, counter_roster, league)
+        opp_after = lineup_value(
+            ros, pos, [p for p in counter_roster if p not in get_set] + list(give), league)
+        # Opponent receives what I `give` and gives up what I `get`.
+        accept_prob = round(_accept_prob(opp_after - opp_before, give_vor - get_vor), 2)
+
+    def _line(pid: str, starter_set: set[str]) -> dict:
+        return {"id": pid, "name": names.get(pid, pid), "pos": pos.get(pid, "?"),
+                "ros_proj": round(ros.get(pid, 0.0), 1), "ros_vor": round(ros_vor.get(pid, 0.0), 1),
+                "starter": pid in starter_set}
+
+    give_detail = [_line(a, starters_before) for a in give]
+    get_detail = [_line(c, starters_after) for c in get]
+
+    notes = []
+    unpriced = [names.get(p, p) for p in list(give) + list(get) if p not in ros]
+    if unpriced:
+        notes.append(f"No projection for {', '.join(unpriced)} — treated as replacement level.")
+    benched_in = [d["name"] for d in get_detail if not d["starter"]]
+    if benched_in:
+        notes.append(f"{', '.join(benched_in)} wouldn't crack your starting lineup — "
+                     "those points sit on your bench.")
+    if need_to_drop:
+        notes.append(f"This trade leaves you {need_to_drop} over the roster limit — "
+                     f"you'd need to drop {need_to_drop} more player(s).")
+    if not single_counterparty:
+        notes.append("Players come from multiple teams — shown for analysis, not as one offer.")
+
+    # Verdict keys off the depth-adjusted gain so it can't read "neutral" while the
+    # numbers beside it show real bench insurance given up (or gained) for no lineup change.
+    adjusted_delta = round(lineup_delta + depth_delta, 1)
+    verdict = "favorable" if adjusted_delta > 2 else ("unfavorable" if adjusted_delta < -2 else "neutral")
+
+    return {
+        "lineup_delta": lineup_delta, "lineup_before": round(lineup_before, 1),
+        "lineup_after": round(lineup_after, 1), "points_sum_delta": points_sum_delta,
+        "vor_delta": vor_delta, "depth_delta": depth_delta, "adjusted_delta": adjusted_delta,
+        "fairness": fairness, "accept_prob": accept_prob, "need_to_drop": need_to_drop,
+        "verdict": verdict, "give": give_detail, "get": get_detail, "notes": notes,
+    }

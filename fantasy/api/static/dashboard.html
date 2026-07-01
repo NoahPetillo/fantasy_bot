@@ -55,6 +55,29 @@
   .chatlog .q{color:var(--muted);margin-top:8px}.chatlog .a{margin:2px 0 6px}
   footer{max-width:1180px;margin:0 auto;padding:22px 20px 48px;color:var(--faint);font-size:12px;border-top:1px solid var(--line)}
   .muted{color:var(--muted)}.faint{color:var(--faint)}
+  /* Trade analyzer player picker */
+  .ta-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.ta-grid{grid-template-columns:1fr}}
+  .ta-label{font-size:12px;margin-bottom:5px}
+  .ta-box{position:relative;border:1px solid var(--line);border-radius:9px;background:#0b1120;padding:6px 6px 2px}
+  .ta-box .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:rgba(59,130,246,.14);
+    border:1px solid var(--line);border-radius:999px;padding:3px 5px 3px 10px;font-size:13px}
+  .chip b{cursor:pointer;color:var(--muted);font-weight:700;padding:0 3px;line-height:1}
+  .chip b:hover{color:var(--red)}
+  .ta-input{border:0!important;background:transparent!important;padding:7px 4px!important;margin-top:2px}
+  .ta-sug{position:absolute;left:0;right:0;top:100%;z-index:6;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;margin-top:4px;max-height:250px;overflow:auto;
+    display:none;box-shadow:0 10px 28px rgba(0,0,0,.45)}
+  .ta-sug.show{display:block}
+  .ta-opt{padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
+  .ta-opt:last-child{border-bottom:0}
+  .ta-opt:hover{background:rgba(255,255,255,.05)}
+  .ta-head{font-size:16px;font-weight:700}
+  .ta-head.up{color:var(--green)}.ta-head.down{color:#f4b0a8}
+  .ta-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  .ta-cols ul{margin:4px 0 0;padding-left:16px}.ta-cols li{margin:3px 0}
+  .ta-bench{color:var(--amber)}
 </style>
 </head>
 <body>
@@ -106,6 +129,8 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 let CLERK = null, CONSENT_VERSION = null, LEAGUES = [], ACTIVE = null;
+let TRADE = null, TA_GIVE = [], TA_GET = [], TA_LEAGUE = null, TA_QUERY = {give: "", get: ""};
+const taNorm = (s) => String(s||"").toLowerCase().replace(/[.'-]/g," ").replace(/\s+/g," ").trim();
 
 // ── tiny inline markdown (for the consent copy) ──
 function mdInline(s){ return esc(s)
@@ -214,6 +239,9 @@ async function buildLeague(id){ try{ await api("POST",`/api/leagues/${id}/build`
 async function renderDashboard(){
   let d; try{ d=await api("GET",`/api/dashboard?league=${ACTIVE}`); }catch(e){ $("dash").innerHTML=`<div class="card">${esc(e.message)}</div>`; return; }
   const t=d.team||{};
+  if(TA_LEAGUE!==ACTIVE){ TA_GIVE=[]; TA_GET=[]; TA_QUERY={give:"",get:""}; TA_LEAGUE=ACTIVE; }  // reset picks when switching leagues
+  TRADE=d.trade||null;
+  const hasTrade=!!(TRADE&&TRADE.players&&Object.keys(TRADE.players).length);
   const kpis=(d.kpis||[]).map(k=>`<div class="kpi"><div class="v">${esc(k.value)}</div><div class="l">${esc(k.label)}</div><div class="s">${esc(k.sub||'')}</div></div>`).join("");
   const lineup=(d.lineup||[]).map(r=>`<tr><td>${esc(r.slot)}</td><td>${esc(r.name)}</td><td>${esc(r.pos)}</td><td>${esc(r.proj)}</td></tr>`).join("");
   const status=(id)=>{ const s=(d.statuses||{})[id]; return s?`<span class="pill ${esc(s)}">${esc(s)}</span>`:""; };
@@ -246,28 +274,96 @@ async function renderDashboard(){
     ${lineup?`<div class="sec"><h2>Optimal lineup · start/sit (${esc(d.lineup_total||0)})</h2><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj</th></tr>${lineup}</table></div>`:''}
     ${waivers?`<div class="sec"><h2>Waiver targets</h2>${waivers}</div>`:''}
     ${trades?`<div class="sec"><h2>Trade ideas</h2>${trades}</div>`:''}
-    <div class="sec"><h2>Trade analyzer</h2>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <input id="taGive" placeholder="you give (player)" style="flex:1;min-width:130px" />
-        <input id="taGet" placeholder="you get (player)" style="flex:1;min-width:130px" />
-        <button onclick="analyzeTrade()">Analyze</button></div>
-      <div class="msg" id="taResult" style="margin-top:8px"></div></div>
+    <div class="sec"><h2>Trade analyzer</h2>${hasTrade?`
+      <div class="faint" style="margin-bottom:10px">Build a package of any size — value reflects your starting lineup &amp; roster, not just raw points.</div>
+      <div class="ta-grid">
+        <div><div class="faint ta-label">You give — your roster</div><div id="taGiveBox" class="ta-box"></div></div>
+        <div><div class="faint ta-label">You get — other teams</div><div id="taGetBox" class="ta-box"></div></div>
+      </div>
+      <button style="margin-top:12px" onclick="analyzeTrade()">Analyze trade</button>
+      <div class="msg" id="taResult" style="margin-top:10px"></div>`
+      :`<div class="faint">Connect ESPN and build the analysis to evaluate trades against your live roster.</div>`}</div>
     ${reportCard}
     ${inf?`<div class="sec"><h2>Bot influence</h2><div class="row"><div>Followed ${esc(inf.followed)} · Confirmed ${esc(inf.confirmed)} · Rejected ${esc(inf.rejected)} · Pending ${esc(inf.pending)}</div><div class="meta">acceptance ${esc(inf.acceptance_rate??'—')}</div></div>${inflog}</div>`:''}
     ${feed?`<div class="sec"><h2>News &amp; alerts</h2>${feed}</div>`:''}
     ${standings?`<div class="sec"><h2>Standings</h2><table><tr><th>#</th><th>Team</th><th>W-L</th><th>PF</th></tr>${standings}</table></div>`:''}`;
+  initTradeAnalyzer();
 }
 async function decide(id,action){ try{ await api("POST",`/proposals/${id}/${action}`); renderDashboard(); }catch(e){ alert(e.message); } }
+
+// ── trade analyzer: searchable multi-player pickers ──
+function initTradeAnalyzer(){
+  if(!(TRADE&&TRADE.players&&Object.keys(TRADE.players).length)) return;
+  renderPicker("give"); renderPicker("get");
+}
+function taSel(side){ return side==="give"?TA_GIVE:TA_GET; }
+function renderPicker(side){
+  const box=$(side==="give"?"taGiveBox":"taGetBox"); if(!box) return;
+  const players=(TRADE&&TRADE.players)||{}, sel=taSel(side);
+  const chips=sel.map(pid=>{ const p=players[pid]||{name:pid,pos:"?"};
+    return `<span class="chip">${esc(p.name)} <span class="faint">${esc(p.pos)}</span>`+
+           `<b onclick="removePick('${side}','${pid}')">×</b></span>`; }).join("");
+  box.innerHTML=`<div class="chips">${chips}</div>`+
+    `<input class="ta-input" id="taInput_${side}" autocomplete="off" spellcheck="false" `+
+    `placeholder="${sel.length?'add another player…':'search a player…'}" `+
+    `oninput="filterPicks('${side}')" onfocus="filterPicks('${side}')" />`+
+    `<div class="ta-sug" id="taSug_${side}"></div>`;
+  // restore an in-progress search that a background dashboard re-render would otherwise wipe
+  const inp=$("taInput_"+side);
+  if(inp && TA_QUERY[side]){ inp.value=TA_QUERY[side]; filterPicks(side); }
+}
+function filterPicks(side){
+  const inp=$("taInput_"+side), sug=$("taSug_"+side); if(!inp||!sug) return;
+  const q=taNorm(inp.value); TA_QUERY[side]=inp.value;
+  const players=(TRADE&&TRADE.players)||{};
+  const myId=TRADE.my_team_id, teamNames=TRADE.team_names||{};
+  const sel=taSel(side), other=side==="give"?TA_GET:TA_GIVE;
+  let items=Object.entries(players).filter(([pid,p])=>{
+    if(side==="give"?p.team_id!==myId:p.team_id===myId) return false;   // scope to roster / opponents
+    if(sel.includes(pid)||other.includes(pid)) return false;
+    return !q || taNorm(p.name).includes(q);
+  });
+  // With a query, rank name-matches by relevance (prefix first) so a searched player — even a
+  // proj-0 K/DST/rookie — is never pushed out of the top-10 by higher-projected players.
+  if(q) items.sort((a,b)=> (taNorm(b[1].name).startsWith(q)-taNorm(a[1].name).startsWith(q)) || (b[1].proj-a[1].proj));
+  else items.sort((a,b)=>b[1].proj-a[1].proj);
+  items=items.slice(0,10);
+  if(!items.length){ sug.innerHTML=`<div class="ta-opt faint">No players</div>`; sug.classList.add("show"); return; }
+  sug.innerHTML=items.map(([pid,p])=>{
+    const owner=side==="get"?` · ${esc(teamNames[String(p.team_id)]||"team")}`:"";
+    return `<div class="ta-opt" onclick="addPick('${side}','${pid}')">${esc(p.name)} `+
+           `<span class="faint">${esc(p.pos)} · proj ${esc(p.proj)}${owner}</span></div>`; }).join("");
+  sug.classList.add("show");
+}
+function addPick(side,pid){ const sel=taSel(side); if(!sel.includes(pid)) sel.push(pid);
+  TA_QUERY[side]=""; renderPicker(side); const i=$("taInput_"+side); if(i) i.focus(); }
+function removePick(side,pid){ const sel=taSel(side), ix=sel.indexOf(pid); if(ix>=0) sel.splice(ix,1); renderPicker(side); }
+document.addEventListener("click",(e)=>{ if(!e.target.closest(".ta-box"))
+  document.querySelectorAll(".ta-sug").forEach(s=>s.classList.remove("show")); });
+
 async function analyzeTrade(){
-  const give=($("taGive").value||"").trim(), get=($("taGet").value||"").trim();
-  const m=$("taResult"); if(!give||!get){ m.className="msg err"; m.textContent="Enter both players."; return; }
+  const m=$("taResult");
+  if(!TA_GIVE.length||!TA_GET.length){ m.className="msg err"; m.textContent="Add at least one player on each side."; return; }
   try{
-    const r=await api("POST","/api/analyze-trade",{give,get,league:ACTIVE});
+    const r=await api("POST","/api/analyze-trade",{give:TA_GIVE,get:TA_GET,league:ACTIVE});
     if(r.error){ m.className="msg err"; m.textContent=r.error; return; }
-    m.className="msg ok";
-    m.innerHTML=`Net VOR ${r.net>=0?'+':''}${esc(r.net)} in your favor — <strong>${esc(r.fairness)}</strong>. `+
-      `<span class="faint">give ${esc(give)} (VOR ${esc(r.give_vor)}) ↔ get ${esc(get)} (VOR ${esc(r.get_vor)})</span>`;
+    m.className="msg ok"; m.innerHTML=renderTradeResult(r);
   }catch(e){ m.className="msg err"; m.textContent=e.message; }
+}
+function renderTradeResult(r){
+  const sg=(n)=>`${n>=0?'+':''}${esc(n)}`;
+  const cls=r.verdict==="favorable"?"up":(r.verdict==="unfavorable"?"down":"");
+  const side=(arr)=>arr.map(p=>`<li>${esc(p.name)} <span class="faint">${esc(p.pos)} · ROS ${esc(p.ros_proj)} pts</span>`+
+    `${p.starter?'':' <span class="ta-bench">· bench</span>'}</li>`).join("");
+  const acc=(r.accept_prob!=null)?`<div style="margin-top:6px">Opponent accept likelihood: <strong>${Math.round(r.accept_prob*100)}%</strong>`+
+    `${r.with_team?` <span class="faint">vs ${esc(r.with_team)}</span>`:''}</div>`:"";
+  const notes=(r.notes||[]).map(n=>`<div class="faint" style="margin-top:3px">• ${esc(n)}</div>`).join("");
+  return `<div class="ta-head ${cls}">Starting-lineup impact: ${sg(r.lineup_delta)} ROS pts · ${esc(r.verdict)}</div>`+
+    `<div class="faint" style="margin-top:4px">Raw points swing ${sg(r.points_sum_delta)} · `+
+    `value (VOR) ${sg(r.vor_delta)} — <strong>${esc(r.fairness)}</strong> · depth ${sg(r.depth_delta)}</div>`+
+    acc+
+    `<div class="ta-cols"><div><div class="faint ta-label">You give</div><ul>${side(r.give)}</ul></div>`+
+    `<div><div class="faint ta-label">You get</div><ul>${side(r.get)}</ul></div></div>`+notes;
 }
 
 // ── chat ──
