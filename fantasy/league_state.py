@@ -18,6 +18,12 @@ import pandas as pd
 from fantasy.league_settings import LeagueSettings
 
 
+# ESPN injury statuses that mean "cannot play this week".
+RULED_OUT = {"OUT", "INJURY_RESERVE", "SUSPENSION"}
+# Statuses worth flagging to the user without benching automatically.
+QUESTIONABLE = {"QUESTIONABLE", "DOUBTFUL"}
+
+
 @dataclass
 class LeagueSnapshot:
     season: int
@@ -29,6 +35,14 @@ class LeagueSnapshot:
     positions: dict[str, str] = field(default_factory=dict)  # player_id -> position
     faab_remaining: dict[int, int] = field(default_factory=dict)
     team_names: dict[int, str] = field(default_factory=dict)
+    injury_status: dict[str, str] = field(default_factory=dict)  # player_id -> ESPN status
+
+    def ruled_out(self) -> set[str]:
+        """Players who cannot play this week (OUT / IR / suspended)."""
+        return {p for p, s in self.injury_status.items() if s in RULED_OUT}
+
+    def questionable(self) -> set[str]:
+        return {p for p, s in self.injury_status.items() if s in QUESTIONABLE}
 
     def roster(self, team_id: int) -> list[str]:
         return self.teams.get(team_id, [])
@@ -124,31 +138,32 @@ def build_live_snapshot(client, league: LeagueSettings, season: int, week: int,
         espn_id = str(getattr(p, "playerId", "") or "")
         return espn_to_gsis.get(espn_id, f"espn:{espn_id}")
 
-    teams, names, positions, team_names, faab = {}, {}, {}, {}, {}
+    teams, names, positions, team_names, faab, injuries = {}, {}, {}, {}, {}, {}
+
+    def note_player(p) -> str:
+        pid = pid_of(p)
+        names[pid] = getattr(p, "name", "?")
+        positions[pid] = getattr(p, "position", "?")
+        status = str(getattr(p, "injuryStatus", "") or "").upper()
+        if status and status != "ACTIVE":
+            injuries[pid] = status
+        return pid
+
     for t in client.teams():
         tid = getattr(t, "team_id", None)
         roster = getattr(t, "roster", []) or []
-        teams[tid] = []
-        for p in roster:
-            pid = pid_of(p)
-            teams[tid].append(pid)
-            names[pid] = getattr(p, "name", "?")
-            positions[pid] = getattr(p, "position", "?")
+        teams[tid] = [note_player(p) for p in roster]
         team_names[tid] = getattr(t, "team_name", f"Team {tid}")
         # ESPN exposes remaining FAAB on the team in budget leagues.
         faab[tid] = int(getattr(t, "acquisition_budget_spent", 0) or 0)
         faab[tid] = league.faab_budget - faab[tid]
 
-    fas = []
-    for p in client.free_agents(size=300):
-        pid = pid_of(p)
-        fas.append(pid)
-        names[pid] = getattr(p, "name", "?")
-        positions[pid] = getattr(p, "position", "?")
+    fas = [note_player(p) for p in client.free_agents(size=300)]
 
     return LeagueSnapshot(
         season=season, week=week,
         my_team_id=my_team_id or app_settings.espn_team_id or (next(iter(teams)) if teams else 1),
         teams=teams, free_agents=fas, names=names, positions=positions,
         faab_remaining=faab or {t: league.faab_budget for t in teams}, team_names=team_names,
+        injury_status=injuries,
     )

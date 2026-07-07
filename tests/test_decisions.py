@@ -308,6 +308,7 @@ def test_trade_block_covers_all_rostered_players():
     tb = _trade_block(snap, board.set_index("player_id"), LEAGUE, 8)
     assert set(tb["players"]) == set(me + opp + ["kx"])
     assert tb["players"]["p0"]["team_id"] == 1 and tb["players"]["p8"]["team_id"] == 2
-    assert tb["players"]["kx"] == {"name": "Kicker X", "pos": "K", "proj": 0.0, "vor": 0.0, "team_id": 1}
+    assert tb["players"]["kx"] == {"name": "Kicker X", "pos": "K", "proj": 0.0, "vor": 0.0,
+                                   "team_id": 1, "games": 8}
     assert tb["remaining_weeks"] == 8 and tb["bench_size"] == 4
     assert tb["roster_slots"] == {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1}

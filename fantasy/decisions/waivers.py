@@ -40,20 +40,22 @@ def recommend_waivers(
 ) -> list[Proposal]:
     b = board.set_index("player_id")
     my = [p for p in snap.my_roster() if p in b.index]
-    fas = [p for p in snap.free_agents if p in b.index]
+    ruled_out = snap.ruled_out()
+    # Don't recommend adding a player who can't play (OUT/IR/suspended) — the
+    # board's projection doesn't know about the injury yet.
+    fas = [p for p in snap.free_agents if p in b.index and p not in ruled_out]
     if not my or not fas:
         return []
 
-    ros = {pid: float(b.loc[pid, "proj"]) * remaining_weeks for pid in b.index}
-    ros_vor = {pid: float(b.loc[pid, "vor"]) * remaining_weeks for pid in b.index}
+    from fantasy.decisions.ros import ros_maps
+    ros, ros_vor = ros_maps(board, league, snap.season, snap.week, remaining_weeks)
     pos = {pid: b.loc[pid, "position"] for pid in b.index}
 
     base_val, starters = _roster_value(my, ros, ros_vor, pos, league)
     bench = [p for p in my if p not in starters]
-    # Drop the weakest bench player (never auto-drop a starter).
+    # Candidate drops: the weakest few bench players (never auto-drop a starter).
     pool = bench or my
-    drop = min(pool, key=lambda p: ros_vor.get(p, 0.0))
-    drow = b.loc[drop]
+    drop_cands = sorted(pool, key=lambda p: ros_vor.get(p, 0.0))[:4]
 
     budget = league.faab_budget
     remaining = snap.faab_remaining.get(snap.my_team_id, budget)
@@ -65,9 +67,19 @@ def recommend_waivers(
     props: list[Proposal] = []
     for fa in cand.itertuples():
         add = fa.Index
-        if add == drop:
+        # Best drop FOR THIS add: the bench player whose removal costs the least
+        # given the new roster shape (not always the lowest-VOR body).
+        best = None
+        for d in drop_cands:
+            if d == add:
+                continue
+            val, _ = _roster_value([p for p in my if p != d] + [add], ros, ros_vor, pos, league)
+            if best is None or val > best[0]:
+                best = (val, d)
+        if best is None:
             continue
-        new_val, _ = _roster_value([p for p in my if p != drop] + [add], ros, ros_vor, pos, league)
+        new_val, drop = best
+        drow = b.loc[drop]
         gain = new_val - base_val
         boost = boosts.get(add, 1.0) if use_boosts else 1.0
         gain *= boost  # experts flagging this add raise its waiver priority (capped ≤1.5×)

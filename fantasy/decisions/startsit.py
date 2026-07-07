@@ -16,7 +16,13 @@ def recommend_lineup(
     mine = board[board["player_id"].isin(snap.my_roster())].copy()
     if mine.empty:
         return []
-    players = [(r.player_id, r.position, float(r.proj)) for r in mine.itertuples(index=False)]
+    # Never start a player who's ruled OUT / on IR / suspended.
+    out = snap.ruled_out() & set(mine["player_id"])
+    quest = snap.questionable()
+    eligible = mine[~mine["player_id"].isin(out)]
+    if eligible.empty:
+        return []
+    players = [(r.player_id, r.position, float(r.proj)) for r in eligible.itertuples(index=False)]
     lineup = optimize_lineup(players, league)
 
     starters = {pid for pids in lineup.values() for pid in pids}
@@ -30,12 +36,13 @@ def recommend_lineup(
     for slot, pids in lineup.items():
         for pid in pids:
             total += proj[pid]
+            tag = "  ⚠ questionable" if pid in quest else ""
             start_lines.append(
-                f"  {slot:5s} {name[pid]:22s} {proj[pid]:5.1f}  ({fl[pid]:.0f}-{ce[pid]:.0f})"
+                f"  {slot:5s} {name[pid]:22s} {proj[pid]:5.1f}  ({fl[pid]:.0f}-{ce[pid]:.0f}){tag}"
             )
 
     # Close calls: best benched player vs the weakest starter at an overlapping slot.
-    bench = mine[~mine["player_id"].isin(starters)].sort_values("proj", ascending=False)
+    bench = eligible[~eligible["player_id"].isin(starters)].sort_values("proj", ascending=False)
     swaps = []
     for b in bench.head(6).itertuples(index=False):
         weaker = [s for s in starters if proj[s] < b.proj and _same_flex(pos[s], b.position, league)]
@@ -45,6 +52,9 @@ def recommend_lineup(
                          f"{name[worst]} ({proj[worst]:.1f})  +{b.proj - proj[worst]:.1f}")
 
     detail = "Optimal starting lineup:\n" + "\n".join(start_lines)
+    if out:
+        benched = ", ".join(sorted(name.get(p, p) for p in out))
+        detail += f"\n\nExcluded (OUT/IR/suspended): {benched}"
     if swaps:
         detail += "\n\nClose calls:\n" + "\n".join(swaps)
     return [
@@ -52,10 +62,24 @@ def recommend_lineup(
             kind=ProposalKind.start_sit, season=snap.season, week=snap.week,
             team_id=snap.my_team_id, title=f"Week {snap.week} lineup — {total:.1f} proj pts",
             detail=detail, value=round(total, 2),
+            confidence=_lineup_confidence(starters, proj, fl, ce),
             payload={"key_fields": {"starters": sorted(starters)},
                      "lineup": {s: p for s, p in lineup.items() if p}},
         )
     ]
+
+
+def _lineup_confidence(starters: set[str], proj: dict, fl: dict, ce: dict) -> float:
+    """Confidence from the projection distributions: tight floor-ceiling spreads
+    around solid projections read as high confidence; boom/bust lineups don't."""
+    if not starters:
+        return 0.5
+    cvs = [(ce[p] - fl[p]) / proj[p] for p in starters if proj.get(p, 0) > 1]
+    if not cvs:
+        return 0.5
+    # Typical weekly spread/proj sits ~1.2 (tight) to ~2.5 (volatile).
+    avg = sum(cvs) / len(cvs)
+    return round(min(max(0.9 - 0.2 * (avg - 1.2), 0.4), 0.9), 2)
 
 
 def _same_flex(pos_a: str, pos_b: str, league: LeagueSettings) -> bool:
