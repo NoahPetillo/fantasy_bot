@@ -14,7 +14,7 @@ import pandas as pd
 from scipy.optimize import nnls
 
 # Component prediction columns to blend (model proj + point-in-time baselines).
-COMPONENTS = ["proj", "pts_trail_mean", "pts_season_mean", "pts_last"]
+COMPONENTS = ["proj", "pts_trail_mean", "pts_season_mean", "pts_last", "pts_ewm"]
 
 
 class StackedBlender:

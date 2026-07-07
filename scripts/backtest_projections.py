@@ -1,6 +1,6 @@
 """Phase 1 end-to-end on real data (no cookies):
 
-  train on 2020-2022, project 2023, then:
+  train on 2021-2024, project 2025, then:
   1. accuracy vs naive baselines (must beat trailing-4),
   2. a cross-positional VOR value board for the season,
   3. distribution floor/median/ceiling for the top players.
@@ -35,7 +35,7 @@ LEAGUE = LeagueSettings(
     roster=RosterRequirements(slots={"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1,
                                      "K": 1, "D/ST": 1, "BE": 7}),
 )
-TRAIN, TEST = [2020, 2021, 2022], 2023
+TRAIN, TEST = [2021, 2022, 2023, 2024], 2025
 
 
 def main() -> int:

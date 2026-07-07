@@ -20,6 +20,7 @@ def _synth(n=400, seed=0):
             "pts_trail_mean": truth + rng.normal(0, 5, n),
             "pts_season_mean": truth + rng.normal(0, 4, n),
             "pts_last": truth + rng.normal(0, 7, n),
+            "pts_ewm": truth + rng.normal(0, 5, n),
         }
     )
     return df

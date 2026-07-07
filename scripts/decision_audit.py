@@ -24,7 +24,8 @@ from fantasy.espn.client import EspnClient
 logging.basicConfig(level=logging.ERROR, format="%(levelname)s %(name)s: %(message)s")
 
 SEASON = 2025
-TRAIN = [2021, 2022, 2023, 2024]
+from fantasy.projections.service import default_train_seasons
+TRAIN = default_train_seasons(SEASON)
 
 
 def fmt(x: float) -> str:

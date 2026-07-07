@@ -19,7 +19,6 @@ from fantasy.db.repos import save_snapshot, set_league_name
 from fantasy.espn.credentials import build_client_for_user
 
 log = logging.getLogger(__name__)
-TRAIN = [2021, 2022, 2023, 2024]
 
 
 def _pick_week(client, requested: int | None) -> int:
@@ -40,7 +39,7 @@ def build_shell_for(db: Session, user: User, league: League, week: int | None = 
 
 def build_full_for(db: Session, user: User, league: League, week: int | None = None) -> dict:
     """Heavy build (model + recommendations + report card), stored per-user."""
-    from fantasy.projections.service import ProjectionService
+    from fantasy.projections.service import ProjectionService, default_train_seasons
 
     client = build_client_for_user(db, user, league.espn_league_id, league.season)
     ls = client.league_settings()
@@ -48,7 +47,7 @@ def build_full_for(db: Session, user: User, league: League, week: int | None = N
     wk = _pick_week(client, week)
     log.info("Building full snapshot: user=%s espn_league=%s wk=%s",
              user.id, league.espn_league_id, wk)
-    service = ProjectionService(ls).fit(TRAIN)
+    service = ProjectionService(ls).fit(default_train_seasons(league.season))
     store = PgProposalStore(db, user.id, league.id)
     payload = assemble(service, ls, store, league.season, wk, client=client,
                        my_team_id=league.team_id)
