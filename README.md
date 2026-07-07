@@ -23,15 +23,26 @@ historical backtests using *your* rules.
 
 ## Status
 
-Greenfield, in active build. See the plan at
-`~/.claude/plans/i-want-to-create-snappy-dream.md`.
+All five phases have working implementations; the app is deployed as a
+multi-tenant SaaS (Clerk + Postgres) and ready for the 2026 season.
 
-- **Phase 0** — prove ESPN read access on the real league. *(scaffold done; needs cookies)*
-- **Phase 1** — ID crosswalk + projection model + VOR + backtest (beat ESPN's projections).
-- **Phase 2** — notify-only loop (FastAPI + scheduler + Slack), news ingestion.
-- **Phase 3** — write execution behind the approval gate (lineup → waivers → trades).
-- **Phase 4** — live draft assistant + self-play.
-- **Phase 5** — polished unified dashboard.
+- **Phase 0** — ESPN read access: verified live on the real league.
+- **Phase 1** — projection model + VOR + backtest. Current accuracy (train
+  2021-24, test 2025, startable rows): model MAE **4.87** vs trailing-4 5.37
+  (**+9.2%**), beats the naive baselines at all four positions. External
+  sources (Sleeper, ESPN, Vegas props) are blended through a leak-free
+  in-season **bias calibrator** (`fantasy/projections/calibration.py`) — the
+  calibrated consensus reached **4.81 MAE** on 2025, better than any single
+  source. Upcoming (unplayed) weeks are projected via synthesized
+  point-in-time rows (`features.future_frame`), with bye teams excluded.
+- **Phase 2** — notify loop (FastAPI + scheduler), news + expert signals.
+- **Phase 3** — write execution behind the approval gate (deep-link tier live;
+  browser tier needs the 2026 season for selector verification).
+- **Phase 4** — draft engine (offline, self-play validated); live poller TBD.
+- **Phase 5** — dashboard: lineup (injury/bye-aware), waivers with FAAB bids,
+  trade ideas + analyzer, standings, chat, season report card.
+
+Retrain/backtest anytime: `uv run python scripts/backtest_projections.py`.
 
 ## Setup
 

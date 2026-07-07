@@ -3,76 +3,195 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
 <title>Fantasy Copilot</title>
 <style>
   :root{
-    --bg:#0a0f1c; --panel:#111a2e; --panel2:#0e1626; --line:rgba(255,255,255,.09);
-    --text:#e6edf7; --muted:#93a2bd; --faint:#5f6f8c; --accent:#d64d2f; --blue:#3b82f6;
-    --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --radius:13px;
+    --bg:#0a0f1c; --panel:#111a2e; --panel2:#0e1626; --inset:#0b1120;
+    --line:rgba(255,255,255,.09); --line-strong:rgba(255,255,255,.16);
+    --text:#e6edf7; --muted:#9aabc7; --faint:#8291ad;
+    --accent:#d64d2f; --accent-soft:rgba(214,77,47,.12);
+    --blue:#3b82f6; --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+    --radius:13px; --radius-s:9px;
+    --z-dropdown:10; --z-sticky:20; --z-backdrop:30; --z-modal:40; --z-toast:50;
+    --speed:180ms; --ease:cubic-bezier(.22,1,.36,1);
   }
   *{box-sizing:border-box}
+  html{scrollbar-gutter:stable}
   body{margin:0;background:var(--bg);color:var(--text);
-    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
   a{color:var(--blue);text-decoration:none}
-  button{font:inherit;border:0;border-radius:9px;padding:8px 14px;font-weight:600;cursor:pointer;color:#fff;background:var(--blue)}
-  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
-  button.ok{background:var(--green)} button.danger{background:transparent;border:1px solid var(--red);color:#f4b0a8}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  input,textarea{width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:#0b1120;color:var(--text);font-size:14px}
-  .center{min-height:70vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:24px}
+  a:hover{text-decoration:underline}
+  h1,h2,h3{text-wrap:balance}
+
+  button{font:inherit;border:0;border-radius:var(--radius-s);padding:9px 14px;min-height:38px;
+    font-weight:600;cursor:pointer;color:#fff;background:var(--blue);
+    transition:filter var(--speed) var(--ease),background var(--speed) var(--ease)}
+  button:hover{filter:brightness(1.12)}
+  button.ghost{background:transparent;border:1px solid var(--line-strong);color:var(--text)}
+  button.ghost:hover{background:rgba(255,255,255,.05);filter:none}
+  button.ok{background:var(--green)}
+  button.danger{background:transparent;border:1px solid var(--red);color:#f4b0a8}
+  button.danger:hover{background:rgba(239,68,68,.1);filter:none}
+  button:disabled{opacity:.45;cursor:not-allowed;filter:none}
+  button.busy{position:relative;color:transparent}
+  button.busy::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;
+    border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;
+    animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  @media(pointer:coarse){button{min-height:44px;padding:11px 16px}}
+
+  input,textarea{width:100%;padding:9px 11px;border-radius:var(--radius-s);
+    border:1px solid var(--line);background:var(--inset);color:var(--text);font-size:14px}
+  input::placeholder{color:var(--faint)}
+  input:focus{outline:none;border-color:var(--blue)}
+
+  .center{min-height:80vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:24px}
+  .hero-brand{font-size:26px;font-weight:700;letter-spacing:-.01em}
+  .hero-brand::before{content:"◆ ";color:var(--accent);font-size:20px}
+  .hero-sub{color:var(--muted);max-width:44ch}
+
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
-  header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel2);position:sticky;top:0;z-index:5}
-  .brand{font-weight:700;letter-spacing:.3px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 20px;
+    border-bottom:1px solid var(--line);background:var(--panel2);position:sticky;top:0;z-index:var(--z-sticky)}
+  .brand{font-weight:700;letter-spacing:.2px;white-space:nowrap}
+  .brand::before{content:"◆ ";color:var(--accent);font-size:12px}
   .brand small{color:var(--faint);font-weight:400;margin-left:8px}
-  .wrap{display:grid;grid-template-columns:260px 1fr;gap:18px;max-width:1180px;margin:0 auto;padding:18px 20px}
-  @media(max-width:820px){.wrap{grid-template-columns:1fr}}
-  .side h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin:2px 0 10px}
-  .lg{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer}
-  .lg.active{border-color:var(--accent);background:rgba(214,77,47,.08)}
+  @media(max-width:640px){.brand small{display:none} header{padding:10px 12px}}
+  .planbadge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;
+    border:1px solid var(--line-strong);color:var(--muted)}
+  .planbadge.pro{color:#ffd9a8;border-color:var(--amber)}
+
+  .wrap{display:grid;grid-template-columns:264px 1fr;gap:18px;max-width:1180px;margin:0 auto;padding:18px 20px}
+  @media(max-width:820px){.wrap{grid-template-columns:1fr;padding:14px 12px}}
+  .side h3{font-size:13px;font-weight:600;color:var(--muted);margin:2px 0 10px}
+  .lg{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;
+    border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;
+    transition:border-color var(--speed) var(--ease),background var(--speed) var(--ease)}
+  .lg:hover{border-color:var(--line-strong);background:rgba(255,255,255,.03)}
+  .lg.active{border-color:var(--accent);background:var(--accent-soft)}
+  .lg .nm{font-weight:600;font-size:14px}
   .lg .sub{color:var(--faint);font-size:12px}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+  .lg .sub .building{color:var(--amber)}
+  .lg .go{color:var(--faint);font-size:16px;flex:none}
+  .lg.active .go{color:var(--accent)}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:4px}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
-  .kpi .v{font-size:24px;font-weight:700}.kpi .l{color:var(--muted);font-size:12px}.kpi .s{color:var(--faint);font-size:11px}
-  .sec{margin:18px 0}.sec h2{font-size:15px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 13px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px}
-  .row .meta{color:var(--faint);font-size:12px}
-  .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .kpi .v{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{color:var(--muted);font-size:12px}.kpi .s{color:var(--faint);font-size:11px}
+
+  .sec{margin:20px 0}
+  .sec h2{font-size:14px;font-weight:600;margin:0 0 10px;color:var(--muted);display:flex;align-items:baseline;gap:8px}
+  .sec h2 .n{color:var(--faint);font-weight:400;font-size:12px}
+  .row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;
+    border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:var(--panel)}
+  .row .meta{color:var(--faint);font-size:12px;margin-top:2px}
+  .row .val{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .empty{border:1px dashed var(--line-strong);border-radius:11px;padding:16px;
+    color:var(--faint);font-size:13px;text-align:center}
+
+  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
   .pill.approved{color:#bff0d0;border-color:var(--green)} .pill.rejected{color:#f4b0a8;border-color:var(--red)}
-  .pill.executed{color:#bfe0ff;border-color:var(--blue)}
-  .acts{display:flex;gap:6px;flex-wrap:wrap}.acts button{padding:5px 10px;font-size:12px}
-  table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+  .pill.executed{color:#bfe0ff;border-color:var(--blue)} .pill.proposed{color:#ffd9a8;border-color:var(--amber)}
+  .pill.you{color:#ffd0c2;border-color:var(--accent)}
+  .inj{font-size:11px;font-weight:700;margin-left:6px}
+  .inj.q{color:var(--amber)} .inj.o{color:var(--red)}
+
+  .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+  .acts button{padding:6px 12px;font-size:13px;min-height:34px}
+  @media(pointer:coarse){.acts button{min-height:44px}}
+  @media(max-width:560px){
+    .row{flex-direction:column;align-items:stretch}
+    .acts{justify-content:stretch}
+    .acts button{flex:1}
+  }
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
   th{color:var(--faint);font-weight:600;font-size:12px}
-  .overlay{position:fixed;inset:0;background:rgba(4,7,14,.72);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:10;overflow:auto}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.me td{background:var(--accent-soft)}
+  .tblwrap{overflow-x:auto}
+
+  /* skeleton loading */
+  .skel{border-radius:10px;background:linear-gradient(100deg,var(--panel) 40%,#16223c 50%,var(--panel) 60%);
+    background-size:200% 100%;animation:shimmer 1.2s linear infinite;border:1px solid var(--line)}
+  @keyframes shimmer{to{background-position:-200% 0}}
+  @media (prefers-reduced-motion:reduce){
+    .skel{animation:none;background:var(--panel)}
+    button.busy::after{animation-duration:1.5s}
+    *{transition-duration:1ms!important}
+  }
+
+  .overlay{position:fixed;inset:0;background:rgba(4,7,14,.72);display:none;align-items:flex-start;
+    justify-content:center;padding:40px 16px;z-index:var(--z-backdrop);overflow:auto}
   .overlay.show{display:flex}
-  .modal{max-width:600px;width:100%}
-  .msg{margin-top:10px;padding:10px 12px;border-radius:9px;font-size:13px;display:none}
+  .modal{max-width:600px;width:100%;z-index:var(--z-modal)}
+  .modal-s{max-width:420px}
+
+  .msg{margin-top:10px;padding:10px 12px;border-radius:var(--radius-s);font-size:13px;display:none}
   .msg.ok{display:block;background:rgba(34,197,94,.12);border:1px solid var(--green)}
   .msg.err{display:block;background:rgba(239,68,68,.12);border:1px solid #f4b0a8;color:#f4c2bd}
-  .consent{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:#0b1120}
+
+  .consent{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
   .consent input{width:17px;height:17px;flex:none;margin-top:3px}
-  .copy p{margin:8px 0}.copy code{background:#0b1120;border:1px solid var(--line);padding:1px 5px;border-radius:5px}
-  .chatbox{margin-top:6px}.chatlog{max-height:230px;overflow:auto;font-size:14px}
-  .chatlog .q{color:var(--muted);margin-top:8px}.chatlog .a{margin:2px 0 6px}
+  .copy p{margin:8px 0}.copy code{background:var(--inset);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+  .howto{margin:10px 0}
+  .howto summary{cursor:pointer;color:var(--blue);font-size:13px}
+  .howto ol{margin:10px 0 4px;padding-left:20px;font-size:13px;color:var(--muted)}
+  .howto li{margin:6px 0}
+  .howto code{background:var(--inset);border:1px solid var(--line);padding:1px 5px;border-radius:5px;font-size:12px}
+  .hint{font-size:12px;margin:3px 0 8px;min-height:15px}
+  .hint.bad{color:#f4b0a8}.hint.good{color:#bff0d0}
+
+  .chatbox{margin-top:6px}
+  .chatlog{max-height:280px;overflow:auto;font-size:14px}
+  .chatlog .q{color:var(--muted);margin-top:10px;font-weight:600}
+  .chatlog .q::before{content:"You · ";color:var(--faint);font-weight:400;font-size:12px}
+  .chatlog .a{margin:3px 0 6px;white-space:pre-wrap}
+  .chatlog .a.err{color:#f4b0a8}
+  .starters{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .starters button{background:transparent;border:1px solid var(--line-strong);color:var(--muted);
+    font-size:12px;font-weight:400;padding:5px 11px;min-height:30px;border-radius:999px}
+  .starters button:hover{color:var(--text);border-color:var(--blue)}
+  .quota{color:var(--faint);font-size:11px;margin-top:6px}
+
   footer{max-width:1180px;margin:0 auto;padding:22px 20px 48px;color:var(--faint);font-size:12px;border-top:1px solid var(--line)}
   .muted{color:var(--muted)}.faint{color:var(--faint)}
+  .updated{color:var(--faint);font-size:12px;white-space:nowrap}
+
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(10px);
+    background:#1a2740;border:1px solid var(--line-strong);color:var(--text);
+    padding:11px 18px;border-radius:10px;font-size:14px;z-index:var(--z-toast);
+    opacity:0;pointer-events:none;transition:opacity var(--speed) var(--ease),transform var(--speed) var(--ease);
+    max-width:90vw;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:var(--red)}
+
   /* Trade analyzer player picker */
   .ta-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:560px){.ta-grid{grid-template-columns:1fr}}
   .ta-label{font-size:12px;margin-bottom:5px}
-  .ta-box{position:relative;border:1px solid var(--line);border-radius:9px;background:#0b1120;padding:6px 6px 2px}
+  .ta-box{position:relative;border:1px solid var(--line);border-radius:var(--radius-s);background:var(--inset);padding:6px 6px 2px}
+  .ta-box:focus-within{border-color:var(--blue)}
   .ta-box .chips{display:flex;flex-wrap:wrap;gap:5px}
   .chip{display:inline-flex;align-items:center;gap:6px;background:rgba(59,130,246,.14);
     border:1px solid var(--line);border-radius:999px;padding:3px 5px 3px 10px;font-size:13px}
-  .chip b{cursor:pointer;color:var(--muted);font-weight:700;padding:0 3px;line-height:1}
-  .chip b:hover{color:var(--red)}
-  .ta-input{border:0!important;background:transparent!important;padding:7px 4px!important;margin-top:2px}
-  .ta-sug{position:absolute;left:0;right:0;top:100%;z-index:6;background:var(--panel);
-    border:1px solid var(--line);border-radius:9px;margin-top:4px;max-height:250px;overflow:auto;
+  .chip b{cursor:pointer;color:var(--muted);font-weight:700;padding:2px 6px;line-height:1;border-radius:50%}
+  .chip b:hover{color:var(--red);background:rgba(239,68,68,.15)}
+  .ta-input{border:0!important;background:transparent!important;padding:8px 4px!important;margin-top:2px}
+  .ta-input:focus{outline:none}
+  .ta-sug{position:absolute;left:0;right:0;top:100%;z-index:var(--z-dropdown);background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:var(--radius-s);margin-top:4px;max-height:250px;overflow:auto;
     display:none;box-shadow:0 10px 28px rgba(0,0,0,.45)}
   .ta-sug.show{display:block}
-  .ta-opt{padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
+  .ta-opt{padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:14px}
   .ta-opt:last-child{border-bottom:0}
-  .ta-opt:hover{background:rgba(255,255,255,.05)}
+  .ta-opt:hover,.ta-opt.active{background:rgba(59,130,246,.14)}
   .ta-head{font-size:16px;font-weight:700}
   .ta-head.up{color:var(--green)}.ta-head.down{color:#f4b0a8}
   .ta-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
@@ -87,20 +206,34 @@
 <div class="overlay" id="settings">
   <div class="modal card">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 style="margin:0">Settings</h2><button class="ghost" onclick="closeSettings()">Close</button>
+      <h2 style="margin:0;font-size:18px">Settings</h2><button class="ghost" onclick="closeSettings()">Close</button>
     </div>
 
     <div class="sec">
       <h2>ESPN connection</h2>
       <div id="espnStatus" class="muted">…</div>
       <div id="espnCopy" class="copy" style="margin-top:8px"></div>
-      <label class="faint" style="font-size:12px">espn_s2</label>
+      <details class="howto">
+        <summary>How to find your ESPN cookies (60 seconds)</summary>
+        <ol>
+          <li>Open <a href="https://www.espn.com/fantasy/football/" target="_blank" rel="noopener">ESPN Fantasy</a> in a new tab and make sure you're logged in.</li>
+          <li><strong>Chrome / Edge:</strong> press <code>F12</code> (or <code>⌥⌘I</code> on Mac) → <strong>Application</strong> tab → <strong>Cookies</strong> → <code>https://www.espn.com</code>.<br/>
+              <strong>Safari:</strong> enable the Develop menu (Settings → Advanced), then Develop → Show Web Inspector → <strong>Storage</strong> → Cookies.<br/>
+              <strong>Firefox:</strong> <code>F12</code> → <strong>Storage</strong> tab → Cookies.</li>
+          <li>Find the row named <code>espn_s2</code> and copy its whole value (it's long, ~200+ characters).</li>
+          <li>Find the row named <code>SWID</code> and copy its value <strong>including the curly braces</strong>, like <code>{1234ABCD-…}</code>.</li>
+          <li>Paste both below. Cookies last months; if they expire, repeat these steps.</li>
+        </ol>
+      </details>
+      <label class="faint" style="font-size:12px" for="s2">espn_s2</label>
       <input id="s2" autocomplete="off" spellcheck="false" placeholder="paste espn_s2 cookie" />
-      <label class="faint" style="font-size:12px">SWID</label>
-      <input id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXX-XXXX-…}" />
+      <div class="hint" id="s2Hint"></div>
+      <label class="faint" style="font-size:12px" for="swid">SWID</label>
+      <input id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" />
+      <div class="hint" id="swidHint"></div>
       <div class="consent"><input type="checkbox" id="consent" />
         <label for="consent" id="consentLabel">I understand and consent.</label></div>
-      <div class="acts">
+      <div class="acts" style="justify-content:flex-start">
         <button id="connectBtn" disabled onclick="doConnect()">Connect ESPN</button>
         <button class="ghost" id="testBtn" onclick="doTest()" style="display:none">Test connection</button>
         <button class="danger" id="discBtn" onclick="doDisconnect()" style="display:none">Disconnect</button>
@@ -111,7 +244,7 @@
     <div class="sec">
       <h2>Plan &amp; billing</h2>
       <div id="billing" class="muted">…</div>
-      <div class="acts" style="margin-top:10px">
+      <div class="acts" style="margin-top:10px;justify-content:flex-start">
         <button id="upgradeBtn" style="display:none" onclick="upgrade()">Upgrade to Pro</button>
         <button id="manageBtn" class="ghost" style="display:none" onclick="manageBilling()">Manage billing</button>
       </div>
@@ -120,17 +253,63 @@
     <div class="sec">
       <h2>Danger zone</h2>
       <button class="danger" onclick="deleteAccount()">Delete my account</button>
-      <div class="faint" style="margin-top:6px">Removes your account, ESPN credentials, leagues, and data — immediately.</div>
+      <div class="faint" style="margin-top:6px">Removes your account, ESPN credentials, leagues, and data, immediately.</div>
     </div>
   </div>
 </div>
 
+<!-- Confirm dialog -->
+<div class="overlay" id="confirmOv" style="align-items:center">
+  <div class="modal modal-s card">
+    <div id="confirmTitle" style="font-weight:700;font-size:16px"></div>
+    <div id="confirmBody" class="muted" style="margin-top:8px;font-size:14px"></div>
+    <div class="acts" style="margin-top:16px;justify-content:flex-end">
+      <button class="ghost" id="confirmNo">Cancel</button>
+      <button class="danger" id="confirmYes">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-let CLERK = null, CONSENT_VERSION = null, LEAGUES = [], ACTIVE = null;
+let CLERK = null, CONSENT_VERSION = null, LEAGUES = [], ACTIVE = null, PLAN = null;
 let TRADE = null, TA_GIVE = [], TA_GET = [], TA_LEAGUE = null, TA_QUERY = {give: "", get: ""};
+let TA_ACTIVE = {give: -1, get: -1}, TA_ITEMS = {give: [], get: []};
+let BUILD_POLL = null;
 const taNorm = (s) => String(s||"").toLowerCase().replace(/[.'-]/g," ").replace(/\s+/g," ").trim();
+
+// ── toast + custom confirm (replaces alert/confirm) ──
+let TOAST_T = null;
+function toast(text, err){
+  const t = $("toast"); t.textContent = text; t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(TOAST_T); TOAST_T = setTimeout(() => t.classList.remove("show"), 4200);
+}
+function confirmDlg(title, body, yesLabel){
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title; $("confirmBody").textContent = body;
+    $("confirmYes").textContent = yesLabel || "Confirm";
+    const ov = $("confirmOv"); ov.classList.add("show");
+    const done = (v) => { ov.classList.remove("show");
+      $("confirmYes").onclick = $("confirmNo").onclick = ov.onclick = null; resolve(v); };
+    $("confirmYes").onclick = () => done(true);
+    $("confirmNo").onclick = () => done(false);
+    ov.onclick = (e) => { if (e.target === ov) done(false); };
+    $("confirmNo").focus();
+  });
+}
+
+// ── relative time ──
+function ago(ts){
+  if(!ts) return "";
+  const s = Math.max(0, Date.now()/1000 - ts);
+  if(s < 90) return "just now";
+  if(s < 3600) return `${Math.round(s/60)}m ago`;
+  if(s < 86400) return `${Math.round(s/3600)}h ago`;
+  return `${Math.round(s/86400)}d ago`;
+}
 
 // ── tiny inline markdown (for the consent copy) ──
 function mdInline(s){ return esc(s)
@@ -142,7 +321,7 @@ function renderConsent(md){
   for(const raw of md.split("\n")){ const line=raw.trim();
     if(/^-\s*\[\s*\]/.test(line)){ label=line.replace(/^-\s*\[\s*\]\s*/,""); continue; }
     if(/\[\s*Connect ESPN\s*\]/i.test(line)) continue;
-    if(line.startsWith("### ")){ flush(); out.push(`<h3 style="margin:12px 0 4px">${mdInline(line.slice(4))}</h3>`); }
+    if(line.startsWith("### ")){ flush(); out.push(`<h3 style="margin:12px 0 4px;font-size:14px">${mdInline(line.slice(4))}</h3>`); }
     else if(!line) flush(); else para.push(line);
   } flush();
   $("espnCopy").innerHTML=out.join(""); if(label) $("consentLabel").innerHTML=mdInline(label);
@@ -173,90 +352,166 @@ async function boot(){
   s.src=`https://${cfg.clerk_frontend_api}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`;
   s.onload=async()=>{ CLERK=window.Clerk; await CLERK.load();
     CLERK.addListener(()=>renderAuth()); renderAuth(); };
-  s.onerror=()=>{ $("root").innerHTML=`<div class="center"><div class="err">Couldn't load Clerk.</div></div>`; };
+  s.onerror=()=>{ $("root").innerHTML=`<div class="center"><div class="muted">Couldn't load the sign-in library. Check your connection and reload.</div></div>`; };
   document.head.appendChild(s);
 }
 
 function renderAuth(){
   if(!CLERK.user){
-    $("root").innerHTML=`<div class="center"><div class="brand" style="font-size:20px">Fantasy Copilot</div>
-      <div id="signin"></div><div class="faint"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div></div>`;
+    $("root").innerHTML=`<div class="center">
+      <div class="hero-brand">Fantasy Copilot</div>
+      <div class="hero-sub">Your league's quant analyst: lineups, waivers, and trades ranked by real points gained. Read-only ESPN access; you approve every move.</div>
+      <div id="signin"></div>
+      <div class="faint"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div></div>`;
     CLERK.mountSignIn($("signin"));
     return;
   }
   $("root").innerHTML=`
     <header><div class="brand">Fantasy Copilot <small id="whoami"></small></div>
       <div style="display:flex;gap:10px;align-items:center">
+        <span class="planbadge" id="planBadge" style="display:none"></span>
         <button class="ghost" onclick="openSettings()">Settings</button><div id="ub"></div></div></header>
     <div class="wrap">
       <div class="side">
-        <h3>Leagues</h3><div id="leagues"></div>
+        <h3 id="lgHead">Leagues</h3><div id="leagues"></div>
         <div class="card" style="margin-top:10px">
           <div class="faint" style="font-size:12px;margin-bottom:6px">Add a league</div>
-          <input id="lgId" placeholder="ESPN league id" />
+          <input id="lgId" placeholder="ESPN league id" inputmode="numeric" />
           <div style="display:flex;gap:6px;margin-top:6px">
-            <input id="lgTeam" placeholder="team id" /><input id="lgSeason" placeholder="season" />
+            <input id="lgTeam" placeholder="team id (optional)" inputmode="numeric" />
+            <input id="lgSeason" placeholder="season" inputmode="numeric" />
           </div>
-          <button style="margin-top:8px;width:100%" onclick="addLeague()">Add league</button>
+          <button style="margin-top:8px;width:100%" id="addLgBtn" onclick="addLeague()">Add league</button>
           <div class="msg" id="addMsg"></div>
+          <div class="faint" style="font-size:11px;margin-top:8px">The league id is in your ESPN league URL: <code>…/league?leagueId=<strong>123456</strong></code></div>
         </div>
       </div>
-      <div><div id="dash"></div>
+      <div><div id="dash">${skeletonHTML()}</div>
         <div class="sec card chatbox"><h2 style="margin-top:0">Ask the copilot</h2>
           <div class="chatlog" id="chatlog"></div>
+          <div class="starters" id="starters">
+            <button onclick="askPreset('Who should I start at flex this week?')">Who do I start at flex?</button>
+            <button onclick="askPreset('What are my best waiver pickups and how much FAAB should I bid?')">Best waiver bids?</button>
+            <button onclick="askPreset('Which of my players should I try to trade away, and for whom?')">Who should I shop?</button>
+          </div>
           <div style="display:flex;gap:6px;margin-top:8px">
-            <input id="q" placeholder="e.g. Who should I start at flex?" onkeydown="if(event.key==='Enter')ask()" />
-            <button onclick="ask()">Ask</button></div></div>
+            <input id="q" placeholder="Ask anything about your league…" onkeydown="if(event.key==='Enter')ask()" />
+            <button id="askBtn" onclick="ask()">Ask</button></div>
+          <div class="quota" id="chatQuota"></div></div>
       </div>
     </div>
     <footer><strong>Fantasy Copilot</strong> is an independent tool, not affiliated with, authorized,
       or endorsed by ESPN or The Walt Disney Company. · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>`;
   CLERK.mountUserButton($("ub"));
   api("GET","/api/me").then(u=>$("whoami").textContent=u.email||"").catch(()=>{});
+  refreshBilling();
   loadLeagues();
 }
 
+function skeletonHTML(){
+  return `<div class="skel" style="height:74px"></div>
+    <div class="kpis" style="margin-top:14px">
+      <div class="skel" style="height:76px"></div><div class="skel" style="height:76px"></div>
+      <div class="skel" style="height:76px"></div><div class="skel" style="height:76px"></div></div>
+    <div class="skel" style="height:220px;margin-top:18px"></div>
+    <div class="skel" style="height:120px;margin-top:18px"></div>`;
+}
+
 // ── leagues ──
-async function loadLeagues(){
+async function loadLeagues(quiet){
   try{ const d=await api("GET","/api/leagues"); LEAGUES=d.leagues; ACTIVE=ACTIVE||d.active; }
   catch(e){ LEAGUES=[]; }
-  const el=$("leagues");
-  if(!LEAGUES.length){ el.innerHTML=`<div class="faint" style="font-size:13px">No leagues yet. Connect ESPN in Settings, then add one.</div>`; }
-  else el.innerHTML=LEAGUES.map(l=>`<div class="lg ${l.league_id===ACTIVE?'active':''}" onclick="selectLeague('${l.league_id}')">
-    <div><div>${esc(l.name)}</div><div class="sub">${esc(l.season)} · ${esc(l.build_status||'')}</div></div>
-    <button class="ghost" style="padding:3px 8px;font-size:12px" onclick="event.stopPropagation();buildLeague('${l.league_id}')">Build</button></div>`).join("");
-  if(ACTIVE) renderDashboard();
+  const el=$("leagues"); if(!el) return;
+  const head=$("lgHead"); if(head) head.textContent=LEAGUES.length?`Leagues (${LEAGUES.length})`:"Leagues";
+  if(!LEAGUES.length){
+    el.innerHTML=`<div class="empty">No leagues yet.<br/><a href="#" onclick="openSettings();return false">Connect ESPN</a> in Settings, then add your league id below.</div>`;
+  } else {
+    el.innerHTML=LEAGUES.map(l=>{
+      const building=l.build_status==="building";
+      const status=building?`<span class="building">building…</span>`:esc(l.build_status||"");
+      return `<div class="lg ${l.league_id===ACTIVE?'active':''}" role="button" tabindex="0"
+        onclick="selectLeague('${l.league_id}')" onkeydown="if(event.key==='Enter')selectLeague('${l.league_id}')"
+        title="Switch to ${esc(l.name)}">
+        <div><div class="nm">${esc(l.name)}</div><div class="sub">${esc(l.season)} · ${status}</div></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="ghost ${building?'busy':''}" ${building?'disabled':''} style="padding:4px 10px;font-size:12px;min-height:30px"
+            onclick="event.stopPropagation();buildLeague('${l.league_id}')">${building?'…':'Build'}</button>
+          <span class="go">›</span></div></div>`;}).join("");
+  }
+  const anyBuilding=LEAGUES.some(l=>l.build_status==="building");
+  if(anyBuilding && !BUILD_POLL){
+    BUILD_POLL=setInterval(async()=>{
+      const was=LEAGUES.filter(l=>l.build_status==="building").map(l=>l.league_id);
+      await loadLeagues(true);
+      const still=new Set(LEAGUES.filter(l=>l.build_status==="building").map(l=>l.league_id));
+      const finished=was.filter(id=>!still.has(id));
+      if(finished.length){ toast("Analysis built."); if(finished.includes(ACTIVE)) renderDashboard(); }
+      if(!LEAGUES.some(l=>l.build_status==="building")){ clearInterval(BUILD_POLL); BUILD_POLL=null; }
+    }, 2500);
+  }
+  if(ACTIVE && !quiet) renderDashboard();
 }
-function selectLeague(id){ ACTIVE=id; loadLeagues(); }
+function selectLeague(id){ if(id===ACTIVE) return; ACTIVE=id; $("dash").innerHTML=skeletonHTML(); loadLeagues(); }
 async function addLeague(){
+  const btn=$("addLgBtn"); btn.classList.add("busy"); btn.disabled=true;
   const body={league_id:$("lgId").value.trim(),team_id:$("lgTeam").value.trim()||null,season:$("lgSeason").value.trim()||null};
-  try{ const r=await api("POST","/api/leagues",body); ACTIVE=r.league.league_id; msg("addMsg","League added.",true); loadLeagues(); }
+  try{ const r=await api("POST","/api/leagues",body); ACTIVE=r.league.league_id;
+    msg("addMsg","League added. Building the full analysis takes a few minutes — hit Build when ready.",true);
+    $("lgId").value=$("lgTeam").value=$("lgSeason").value="";
+    loadLeagues(); }
   catch(e){ msg("addMsg",e.message,false); }
+  btn.classList.remove("busy"); btn.disabled=false;
 }
-async function buildLeague(id){ try{ await api("POST",`/api/leagues/${id}/build`); setTimeout(loadLeagues,1500); }catch(e){} }
+async function buildLeague(id){
+  try{ await api("POST",`/api/leagues/${id}/build`);
+    const l=LEAGUES.find(x=>x.league_id===id); if(l) l.build_status="building";
+    toast("Build started — model training + recommendations take a few minutes.");
+    loadLeagues(true); if(ACTIVE) renderDashboard();
+  }catch(e){ toast(e.message,true); }
+}
 
 // ── dashboard ──
 async function renderDashboard(){
-  let d; try{ d=await api("GET",`/api/dashboard?league=${ACTIVE}`); }catch(e){ $("dash").innerHTML=`<div class="card">${esc(e.message)}</div>`; return; }
+  const dash=$("dash"); if(!dash) return;
+  let d; try{ d=await api("GET",`/api/dashboard?league=${ACTIVE}`); }
+  catch(e){ dash.innerHTML=`<div class="empty" style="padding:28px">${esc(e.message)}<br/><br/><button class="ghost" onclick="renderDashboard()">Retry</button></div>`; return; }
   const t=d.team||{};
   if(TA_LEAGUE!==ACTIVE){ TA_GIVE=[]; TA_GET=[]; TA_QUERY={give:"",get:""}; TA_LEAGUE=ACTIVE; }  // reset picks when switching leagues
   TRADE=d.trade||null;
   const hasTrade=!!(TRADE&&TRADE.players&&Object.keys(TRADE.players).length);
+  const building=LEAGUES.some(l=>l.league_id===ACTIVE&&l.build_status==="building");
+  const isShell=!!t.shell;
+
+  const injTag=(inj)=>{ if(!inj) return "";
+    const short={QUESTIONABLE:"Q",DOUBTFUL:"D",OUT:"OUT",INJURY_RESERVE:"IR",SUSPENSION:"SUSP"}[inj]||inj;
+    const cls=(inj==="QUESTIONABLE"||inj==="DOUBTFUL")?"q":"o";
+    return ` <span class="inj ${cls}" title="${esc(inj)}">${esc(short)}</span>`; };
+
   const kpis=(d.kpis||[]).map(k=>`<div class="kpi"><div class="v">${esc(k.value)}</div><div class="l">${esc(k.label)}</div><div class="s">${esc(k.sub||'')}</div></div>`).join("");
-  const lineup=(d.lineup||[]).map(r=>`<tr><td>${esc(r.slot)}</td><td>${esc(r.name)}</td><td>${esc(r.pos)}</td><td>${esc(r.proj)}</td></tr>`).join("");
+  const lineup=(d.lineup||[]).map(r=>{
+    const range=(r.floor!=null&&r.ceiling!=null)?`<td class="num faint">${esc(r.floor)}–${esc(r.ceiling)}</td>`:"<td></td>";
+    return `<tr><td class="faint">${esc(r.slot)}</td><td>${esc(r.name)}${injTag(r.inj)}</td><td class="faint">${esc(r.pos)}</td><td class="num">${esc(r.proj)}</td>${range}</tr>`;}).join("");
   const status=(id)=>{ const s=(d.statuses||{})[id]; return s?`<span class="pill ${esc(s)}">${esc(s)}</span>`:""; };
   const actbtns=(id,s)=>{ s=(d.statuses||{})[id]||s;
     if(s==="executed") return status(id);
-    const b=[]; if(s==="proposed"){ b.push(`<button class="ok" onclick="decide('${id}','approve')">Approve</button>`); b.push(`<button class="ghost" onclick="decide('${id}','reject')">Reject</button>`);}
-    else { b.push(`<button class="ghost" onclick="decide('${id}','undo')">Undo</button>`); b.push(`<button onclick="decide('${id}','confirm')">Confirm on ESPN</button>`);}
-    return status(id)+`<span class="acts">${b.join("")}</span>`; };
-  const waivers=(d.waivers||[]).map(w=>`<div class="row"><div><div>➕ ${esc(w.add)} <span class="faint">/ drop ${esc(w.drop)}</span></div><div class="meta">${esc(w.reason)}</div></div><div class="acts">${actbtns(w.id,'proposed')}</div></div>`).join("");
-  const trades=(d.trades||[]).map(x=>`<div class="row"><div><div>🔁 get ${esc(x.get)} <span class="faint">/ give ${esc(x.give)}</span> ${x.priority?'<span class="pill">priority</span>':''}</div><div class="meta">${esc(x.reason)}</div></div><div class="acts">${actbtns(x.id,'proposed')}</div></div>`).join("");
-  const standings=(d.standings||[]).map(s=>`<tr><td>${s.rank}</td><td>${esc(s.team)}${s.me?' <span class="pill">you</span>':''}</td><td>${s.w}-${s.l}</td><td>${esc(s.pf)}</td></tr>`).join("");
+    const b=[]; if(s==="proposed"){ b.push(`<button class="ok" onclick="decide(this,'${id}','approve')">Approve</button>`); b.push(`<button class="ghost" onclick="decide(this,'${id}','reject')">Reject</button>`);}
+    else { b.push(`<button class="ghost" onclick="decide(this,'${id}','undo')">Undo</button>`); b.push(`<button onclick="decide(this,'${id}','confirm')" title="Check the move landed on ESPN">Verify on ESPN</button>`);}
+    return status(id)+b.join(""); };
+  const waivers=(d.waivers||[]).map(w=>{
+    const bid=w.bid?` · bid <strong>$${esc(w.bid)}</strong>`:"";
+    const val=w.value!=null?`<span class="val" style="color:var(--green)">+${esc(w.value)} pts</span>`:"";
+    return `<div class="row"><div><div>Add <strong>${esc(w.add)}</strong> <span class="faint">${esc(w.pos||'')}</span> / drop ${esc(w.drop)} ${val}${bid}</div>
+      <div class="meta">${esc(w.reason)}</div></div><div class="acts">${actbtns(w.id,'proposed')}</div></div>`;}).join("");
+  const trades=(d.trades||[]).map(x=>{
+    const acc=(x.accept!=null)?` · ~${Math.round(x.accept*100)}% accept`:"";
+    const gain=(x.my_gain!=null)?`<span class="val" style="color:var(--green)">+${esc(x.my_gain)} pts</span>`:"";
+    return `<div class="row"><div><div>Get <strong>${esc(x.get)}</strong> <span class="faint">for ${esc(x.give)}</span> ${gain}${x.priority?' <span class="pill">priority</span>':''}</div>
+      <div class="meta">${esc(x.reason)}${esc(acc)}</div></div><div class="acts">${actbtns(x.id,'proposed')}</div></div>`;}).join("");
+  const standings=(d.standings||[]).map(s=>`<tr class="${s.me?'me':''}"><td class="faint">${s.rank}</td><td>${esc(s.team)}${s.me?' <span class="pill you">you</span>':''}</td><td class="num">${s.w}-${s.l}</td><td class="num">${esc(s.pf)}</td></tr>`).join("");
   const feed=(d.feed||[]).map(f=>`<div class="row"><div><div>${esc(f.title)}</div><div class="meta">${esc(f.detail)}</div></div>${f.corroborated?'<span class="pill">corroborated</span>':''}</div>`).join("");
   const inf=d.influence;
   const pill=(s)=>`<span class="pill ${esc(s)}">${esc(s)}</span>`;
-  const inflog=(inf&&(inf.log||[]).length)?`<table style="margin-top:8px"><tr><th>Kind</th><th>Recommendation</th><th>Wk</th><th>Value</th><th>Outcome</th></tr>${inf.log.slice(0,12).map(l=>`<tr><td>${esc(l.kind)}</td><td>${esc(l.title)}</td><td>${esc(l.week)}</td><td>${esc(l.value)}</td><td>${pill(l.status)}</td></tr>`).join("")}</table>`:'';
+  const inflog=(inf&&(inf.log||[]).length)?`<div class="tblwrap"><table style="margin-top:8px"><tr><th>Kind</th><th>Recommendation</th><th>Wk</th><th class="num">Value</th><th>Outcome</th></tr>${inf.log.slice(0,12).map(l=>`<tr><td class="faint">${esc(l.kind)}</td><td>${esc(l.title)}</td><td class="faint">${esc(l.week)}</td><td class="num">${esc(l.value)}</td><td>${pill(l.status)}</td></tr>`).join("")}</table></div>`:'';
   // Season report card (the decision audit) — best-effort; present after a full build.
   const rep=d.report;
   const ss=rep&&rep.startsit, mt=rep&&rep.model_trades, wv=rep&&rep.waiver;
@@ -266,30 +521,48 @@ async function renderDashboard(){
       ${wv?`<div class="kpi"><div class="v">${esc(wv.skill_asset)}</div><div class="l">Waiver value (skill)</div><div class="s">stream ${esc(wv.stream_asset)}</div></div>`:''}
       <div class="kpi"><div class="v">${esc(rep.trades_made??0)}</div><div class="l">Trades made</div><div class="s">of ${esc(rep.league_trades??0)} leaguewide</div></div>
     </div>${mt&&mt.best_trade?`<div class="row"><div>Best bot trade idea: get <strong>${esc(mt.best_trade.get)}</strong> / give ${esc(mt.best_trade.give)}</div><div class="meta">would have realized +${esc(mt.best_trade.realized)}</div></div>`:''}</div>`:'';
+
+  const shellCTA=(isShell&&!building)?`<div class="empty" style="margin-top:14px;padding:22px">
+      ${esc(t.status||"Full analysis not built yet.")}<br/><br/>
+      <button onclick="buildLeague('${ACTIVE}')">Build analysis</button>
+      <div class="faint" style="margin-top:8px;font-size:12px">Trains the projection model on 5 seasons and generates lineup, waiver, and trade recommendations. Takes a few minutes.</div></div>`:"";
+
   $("dash").innerHTML=`
-    <div class="card"><div style="font-size:18px;font-weight:700">${esc(t.name||'')}</div>
+    <div class="card" style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div><div style="font-size:18px;font-weight:700">${esc(t.name||'')}</div>
       <div class="muted">${esc(t.league||'')} · week ${esc(t.week||'—')}</div>
-      ${t.build_status==='building'?'<div class="faint">Building full analysis…</div>':''}</div>
+      ${building?'<div style="color:var(--amber);font-size:13px;margin-top:4px">Building full analysis… this page updates automatically.</div>':''}</div>
+      <span class="updated" title="When this analysis was generated">${d.generated_at?`Updated ${ago(d.generated_at)}`:""}</span></div>
+    ${shellCTA}
     <div class="kpis" style="margin-top:14px">${kpis}</div>
-    ${lineup?`<div class="sec"><h2>Optimal lineup · start/sit (${esc(d.lineup_total||0)})</h2><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th>Proj</th></tr>${lineup}</table></div>`:''}
-    ${waivers?`<div class="sec"><h2>Waiver targets</h2>${waivers}</div>`:''}
-    ${trades?`<div class="sec"><h2>Trade ideas</h2>${trades}</div>`:''}
+    <div class="sec"><h2>Optimal lineup ${d.lineup_total?`<span class="n">${esc(d.lineup_total)} projected pts</span>`:""}</h2>
+      ${lineup?`<div class="tblwrap"><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num">Proj</th><th class="num">Range</th></tr>${lineup}</table></div>`
+        :`<div class="empty">${isShell?"Build the analysis to see your optimal lineup.":"No lineup to optimize yet — check back once rosters are set."}</div>`}</div>
+    <div class="sec"><h2>Waiver targets ${d.waivers&&d.waivers.length?`<span class="n">${d.waivers.length} ranked</span>`:""}</h2>
+      ${waivers||`<div class="empty">${isShell?"Waiver recommendations appear after the analysis is built.":"No pickups worth a roster spot this week — your bench beats the wire."}</div>`}</div>
+    <div class="sec"><h2>Trade ideas</h2>
+      ${trades||`<div class="empty">${isShell?"Trade suggestions appear after the analysis is built.":"No win-win trades found right now. The scanner reruns daily; use the analyzer below to test your own ideas."}</div>`}</div>
     <div class="sec"><h2>Trade analyzer</h2>${hasTrade?`
-      <div class="faint" style="margin-bottom:10px">Build a package of any size — value reflects your starting lineup &amp; roster, not just raw points.</div>
+      <div class="faint" style="margin-bottom:10px">Build a package of any size. Value reflects your starting lineup &amp; roster fit, not raw points. Use ↑↓ and Enter to pick.</div>
       <div class="ta-grid">
         <div><div class="faint ta-label">You give — your roster</div><div id="taGiveBox" class="ta-box"></div></div>
         <div><div class="faint ta-label">You get — other teams</div><div id="taGetBox" class="ta-box"></div></div>
       </div>
-      <button style="margin-top:12px" onclick="analyzeTrade()">Analyze trade</button>
+      <button style="margin-top:12px" id="taBtn" onclick="analyzeTrade()">Analyze trade</button>
       <div class="msg" id="taResult" style="margin-top:10px"></div>`
-      :`<div class="faint">Connect ESPN and build the analysis to evaluate trades against your live roster.</div>`}</div>
+      :`<div class="empty">Connect ESPN and build the analysis to evaluate trades against your live roster.</div>`}</div>
     ${reportCard}
     ${inf?`<div class="sec"><h2>Bot influence</h2><div class="row"><div>Followed ${esc(inf.followed)} · Confirmed ${esc(inf.confirmed)} · Rejected ${esc(inf.rejected)} · Pending ${esc(inf.pending)}</div><div class="meta">acceptance ${esc(inf.acceptance_rate??'—')}</div></div>${inflog}</div>`:''}
     ${feed?`<div class="sec"><h2>News &amp; alerts</h2>${feed}</div>`:''}
-    ${standings?`<div class="sec"><h2>Standings</h2><table><tr><th>#</th><th>Team</th><th>W-L</th><th>PF</th></tr>${standings}</table></div>`:''}`;
+    ${standings?`<div class="sec"><h2>Standings</h2><div class="tblwrap"><table><tr><th>#</th><th>Team</th><th class="num">W-L</th><th class="num">PF</th></tr>${standings}</table></div>`:''}`;
   initTradeAnalyzer();
 }
-async function decide(id,action){ try{ await api("POST",`/proposals/${id}/${action}`); renderDashboard(); }catch(e){ alert(e.message); } }
+async function decide(btn,id,action){
+  const wrap=btn.closest(".acts"); const btns=wrap?[...wrap.querySelectorAll("button")]:[btn];
+  btns.forEach(b=>b.disabled=true); btn.classList.add("busy");
+  try{ await api("POST",`/proposals/${id}/${action}`); renderDashboard(); }
+  catch(e){ toast(e.message,true); btns.forEach(b=>b.disabled=false); btn.classList.remove("busy"); }
+}
 
 // ── trade analyzer: searchable multi-player pickers ──
 function initTradeAnalyzer(){
@@ -302,11 +575,11 @@ function renderPicker(side){
   const players=(TRADE&&TRADE.players)||{}, sel=taSel(side);
   const chips=sel.map(pid=>{ const p=players[pid]||{name:pid,pos:"?"};
     return `<span class="chip">${esc(p.name)} <span class="faint">${esc(p.pos)}</span>`+
-           `<b onclick="removePick('${side}','${pid}')">×</b></span>`; }).join("");
+           `<b role="button" aria-label="Remove ${esc(p.name)}" onclick="removePick('${side}','${pid}')">×</b></span>`; }).join("");
   box.innerHTML=`<div class="chips">${chips}</div>`+
     `<input class="ta-input" id="taInput_${side}" autocomplete="off" spellcheck="false" `+
     `placeholder="${sel.length?'add another player…':'search a player…'}" `+
-    `oninput="filterPicks('${side}')" onfocus="filterPicks('${side}')" />`+
+    `oninput="filterPicks('${side}')" onfocus="filterPicks('${side}')" onkeydown="taKey(event,'${side}')" />`+
     `<div class="ta-sug" id="taSug_${side}"></div>`;
   // restore an in-progress search that a background dashboard re-render would otherwise wipe
   const inp=$("taInput_"+side);
@@ -328,27 +601,49 @@ function filterPicks(side){
   if(q) items.sort((a,b)=> (taNorm(b[1].name).startsWith(q)-taNorm(a[1].name).startsWith(q)) || (b[1].proj-a[1].proj));
   else items.sort((a,b)=>b[1].proj-a[1].proj);
   items=items.slice(0,10);
-  if(!items.length){ sug.innerHTML=`<div class="ta-opt faint">No players</div>`; sug.classList.add("show"); return; }
-  sug.innerHTML=items.map(([pid,p])=>{
+  TA_ITEMS[side]=items.map(([pid])=>pid); TA_ACTIVE[side]=items.length?0:-1;
+  if(!items.length){ sug.innerHTML=`<div class="ta-opt faint">No players match</div>`; sug.classList.add("show"); return; }
+  const injBadge=(p)=>p.inj?` <span class="inj ${(p.inj==="QUESTIONABLE"||p.inj==="DOUBTFUL")?"q":"o"}">${esc({QUESTIONABLE:"Q",DOUBTFUL:"D",OUT:"OUT",INJURY_RESERVE:"IR",SUSPENSION:"SUSP"}[p.inj]||p.inj)}</span>`:"";
+  sug.innerHTML=items.map(([pid,p],i)=>{
     const owner=side==="get"?` · ${esc(teamNames[String(p.team_id)]||"team")}`:"";
-    return `<div class="ta-opt" onclick="addPick('${side}','${pid}')">${esc(p.name)} `+
+    return `<div class="ta-opt ${i===0?'active':''}" data-i="${i}" onmouseenter="taHover('${side}',${i})" onclick="addPick('${side}','${pid}')">${esc(p.name)}${injBadge(p)} `+
            `<span class="faint">${esc(p.pos)} · proj ${esc(p.proj)}${owner}</span></div>`; }).join("");
   sug.classList.add("show");
 }
+function taHover(side,i){ TA_ACTIVE[side]=i; paintActive(side); }
+function paintActive(side){
+  const sug=$("taSug_"+side); if(!sug) return;
+  [...sug.querySelectorAll(".ta-opt")].forEach((el,i)=>el.classList.toggle("active",i===TA_ACTIVE[side]));
+  const el=sug.querySelector(".ta-opt.active"); if(el) el.scrollIntoView({block:"nearest"});
+}
+function taKey(ev,side){
+  const sug=$("taSug_"+side); const n=TA_ITEMS[side].length;
+  if(ev.key==="Escape"){ sug.classList.remove("show"); return; }
+  if(!sug||!sug.classList.contains("show")||!n) {
+    if(ev.key==="ArrowDown"){ filterPicks(side); ev.preventDefault(); }
+    return;
+  }
+  if(ev.key==="ArrowDown"){ TA_ACTIVE[side]=(TA_ACTIVE[side]+1)%n; paintActive(side); ev.preventDefault(); }
+  else if(ev.key==="ArrowUp"){ TA_ACTIVE[side]=(TA_ACTIVE[side]-1+n)%n; paintActive(side); ev.preventDefault(); }
+  else if(ev.key==="Enter"){ const pid=TA_ITEMS[side][TA_ACTIVE[side]]; if(pid) addPick(side,pid); ev.preventDefault(); }
+}
 function addPick(side,pid){ const sel=taSel(side); if(!sel.includes(pid)) sel.push(pid);
-  TA_QUERY[side]=""; renderPicker(side); const i=$("taInput_"+side); if(i) i.focus(); }
+  TA_QUERY[side]=""; renderPicker(side);
+  const i=$("taInput_"+side); if(i){ i.focus(); filterPicks(side); } }
 function removePick(side,pid){ const sel=taSel(side), ix=sel.indexOf(pid); if(ix>=0) sel.splice(ix,1); renderPicker(side); }
 document.addEventListener("click",(e)=>{ if(!e.target.closest(".ta-box"))
   document.querySelectorAll(".ta-sug").forEach(s=>s.classList.remove("show")); });
 
 async function analyzeTrade(){
-  const m=$("taResult");
+  const m=$("taResult"), btn=$("taBtn");
   if(!TA_GIVE.length||!TA_GET.length){ m.className="msg err"; m.textContent="Add at least one player on each side."; return; }
+  btn.classList.add("busy"); btn.disabled=true;
   try{
     const r=await api("POST","/api/analyze-trade",{give:TA_GIVE,get:TA_GET,league:ACTIVE});
-    if(r.error){ m.className="msg err"; m.textContent=r.error; return; }
-    m.className="msg ok"; m.innerHTML=renderTradeResult(r);
+    if(r.error){ m.className="msg err"; m.textContent=r.error; }
+    else { m.className="msg ok"; m.innerHTML=renderTradeResult(r); }
   }catch(e){ m.className="msg err"; m.textContent=e.message; }
+  btn.classList.remove("busy"); btn.disabled=false;
 }
 function renderTradeResult(r){
   const sg=(n)=>`${n>=0?'+':''}${esc(n)}`;
@@ -367,12 +662,23 @@ function renderTradeResult(r){
 }
 
 // ── chat ──
+function askPreset(q){ $("q").value=q; ask(); }
 async function ask(){
   const q=$("q").value.trim(); if(!q) return; $("q").value="";
+  const st=$("starters"); if(st) st.style.display="none";
   const log=$("chatlog"); log.insertAdjacentHTML("beforeend",`<div class="q">${esc(q)}</div><div class="a" data-p>…</div>`);
   const el=log.querySelector(".a:last-child"); log.scrollTop=log.scrollHeight;
-  try{ const r=await api("POST","/api/chat",{question:q,league:ACTIVE}); el.textContent=r.answer||JSON.stringify(r); }
-  catch(e){ el.textContent=e.message; } log.scrollTop=log.scrollHeight;
+  try{ const r=await api("POST","/api/chat",{question:q,league:ACTIVE}); el.textContent=r.answer||JSON.stringify(r); refreshQuota(); }
+  catch(e){ el.classList.add("err");
+    el.textContent=/429|quota|limit/i.test(e.message)
+      ? "You've used today's questions on the free plan. It resets at midnight; Pro removes the limit (Settings → Plan & billing)."
+      : e.message; }
+  log.scrollTop=log.scrollHeight; $("q").focus();
+}
+async function refreshQuota(){
+  try{ const s=await api("GET","/api/billing/status"); const c=s.chat||{};
+    if(c.limit) $("chatQuota").textContent=`${c.used}/${c.limit} questions today on the ${s.plan_label||s.plan} plan`;
+  }catch(_){}
 }
 
 // ── settings / connect ESPN ──
@@ -385,36 +691,62 @@ async function openSettings(){
 async function refreshBilling(){
   try{
     const s = await api("GET","/api/billing/status"); const c = s.chat || {};
+    PLAN = s;
+    const badge=$("planBadge");
+    if(badge){ badge.textContent=(s.plan_label||s.plan||"").replace(/^\w/,ch=>ch.toUpperCase());
+      badge.className="planbadge"+(s.plan==="pro"?" pro":""); badge.style.display=""; }
+    if(c.limit&&$("chatQuota")) $("chatQuota").textContent=`${c.used}/${c.limit} questions today on the ${s.plan_label||s.plan} plan`;
+    const bl=$("billing"); if(!bl) return;
     let html = `Plan: <strong>${esc(s.plan_label||s.plan)}</strong> · Chat today: ${esc(c.used)}/${esc(c.limit)} · Leagues: ${esc(s.leagues_used)}/${esc(s.max_leagues)}`;
     if (s.plan==="free" && !s.billing_enabled) html += ` <span class="faint">(upgrades not enabled on this server)</span>`;
-    $("billing").innerHTML = html;
+    bl.innerHTML = html;
     $("upgradeBtn").style.display = (s.plan==="free" && s.billing_enabled) ? "" : "none";
     $("manageBtn").style.display = s.can_manage ? "" : "none";
-  }catch(e){ $("billing").textContent = e.message; }
+  }catch(e){ const bl=$("billing"); if(bl) bl.textContent = e.message; }
 }
-async function upgrade(){ try{ const r=await api("POST","/api/billing/checkout"); window.location=r.url; }catch(e){ alert(e.message); } }
-async function manageBilling(){ try{ const r=await api("POST","/api/billing/portal"); window.location=r.url; }catch(e){ alert(e.message); } }
+async function upgrade(){ try{ const r=await api("POST","/api/billing/checkout"); window.location=r.url; }catch(e){ toast(e.message,true); } }
+async function manageBilling(){ try{ const r=await api("POST","/api/billing/portal"); window.location=r.url; }catch(e){ toast(e.message,true); } }
 function closeSettings(){ $("settings").classList.remove("show"); }
 async function refreshEspnStatus(){
   try{ const s=await api("GET","/api/espn/status"); const on=!!s.connected;
-    $("espnStatus").innerHTML= on?`Connected (consent ${esc(s.consent_version||'?')})`:"Not connected";
+    $("espnStatus").innerHTML= on?`<span style="color:var(--green)">●</span> Connected (consent ${esc(s.consent_version||'?')})`:`<span class="faint">○</span> Not connected`;
     $("testBtn").style.display=on?"":"none"; $("discBtn").style.display=on?"":"none";
   }catch(e){ $("espnStatus").textContent=e.message; }
 }
-function connectEnabled(){ $("connectBtn").disabled=!( $("consent").checked && $("s2").value.trim() && $("swid").value.trim() ); }
-async function doConnect(){
-  try{ const r=await api("POST","/api/espn/connect",{espn_s2:$("s2").value.trim(),swid:$("swid").value.trim(),consent:true,consent_version:CONSENT_VERSION});
-    msg("espnMsg","ESPN connected — encrypted and stored.",true); $("s2").value="";$("swid").value=""; refreshEspnStatus(); loadLeagues(); }
-  catch(e){ msg("espnMsg",e.message,false); }
+function validateCookieFields(){
+  const s2=$("s2").value.trim(), swid=$("swid").value.trim();
+  const s2h=$("s2Hint"), swh=$("swidHint");
+  if(!s2){ s2h.textContent=""; s2h.className="hint"; }
+  else if(s2.length<80){ s2h.textContent="That looks too short — espn_s2 is a long (~200+ character) value. Copy the whole thing."; s2h.className="hint bad"; }
+  else { s2h.textContent="Looks right."; s2h.className="hint good"; }
+  if(!swid){ swh.textContent=""; swh.className="hint"; }
+  else if(!/^\{[0-9A-Fa-f-]{30,40}\}$/.test(swid)){ swh.textContent="SWID should look like {1234ABCD-12AB-…} — include the curly braces."; swh.className="hint bad"; }
+  else { swh.textContent="Looks right."; swh.className="hint good"; }
 }
-async function doTest(){ try{ const r=await api("POST","/api/espn/test"); msg("espnMsg",r.valid?"Connection works.":(r.purged?"Cookies invalid — removed. Reconnect.":"Cookies invalid — reconnect."),!!r.valid); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); } }
-async function doDisconnect(){ if(!confirm("Remove your ESPN credentials?"))return; try{ await api("DELETE","/api/espn/credentials"); msg("espnMsg","Disconnected.",true); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); } }
-async function deleteAccount(){ if(!confirm("Delete your account and all data? This cannot be undone."))return;
-  try{ await api("DELETE","/api/account"); if(CLERK) await CLERK.signOut(); location.reload(); }catch(e){ alert(e.message); } }
+function connectEnabled(){ validateCookieFields();
+  $("connectBtn").disabled=!( $("consent").checked && $("s2").value.trim() && $("swid").value.trim() ); }
+async function doConnect(){
+  const btn=$("connectBtn"); btn.classList.add("busy");
+  try{ const r=await api("POST","/api/espn/connect",{espn_s2:$("s2").value.trim(),swid:$("swid").value.trim(),consent:true,consent_version:CONSENT_VERSION});
+    msg("espnMsg","ESPN connected — cookies encrypted and stored. Add your league from the sidebar.",true);
+    $("s2").value="";$("swid").value=""; validateCookieFields(); refreshEspnStatus(); loadLeagues(); }
+  catch(e){ msg("espnMsg",e.message+" — cookies expire when you log out of ESPN; re-copy them while logged in.",false); }
+  btn.classList.remove("busy");
+}
+async function doTest(){ const b=$("testBtn"); b.classList.add("busy");
+  try{ const r=await api("POST","/api/espn/test"); msg("espnMsg",r.valid?"Connection works.":(r.purged?"Cookies expired — removed. Re-copy them from espn.com while logged in.":"Cookies invalid — re-copy them from espn.com while logged in."),!!r.valid); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); }
+  b.classList.remove("busy"); }
+async function doDisconnect(){
+  if(!await confirmDlg("Disconnect ESPN?","Removes your stored ESPN cookies. Your leagues stay, but builds and live data stop until you reconnect.","Disconnect")) return;
+  try{ await api("DELETE","/api/espn/credentials"); msg("espnMsg","Disconnected.",true); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); } }
+async function deleteAccount(){
+  if(!await confirmDlg("Delete your account?","This permanently removes your account, ESPN credentials, all leagues, proposals, and chat history. It cannot be undone.","Delete everything")) return;
+  try{ await api("DELETE","/api/account"); if(CLERK) await CLERK.signOut(); location.reload(); }catch(e){ toast(e.message,true); } }
 
 function msg(id,text,ok){ const m=$(id); m.textContent=text; m.className="msg "+(ok?"ok":"err"); }
 document.addEventListener("input",(e)=>{ if(["consent","s2","swid"].includes(e.target.id)) connectEnabled(); });
 document.addEventListener("change",(e)=>{ if(e.target.id==="consent") connectEnabled(); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"){ closeSettings(); $("confirmOv").classList.remove("show"); } });
 
 boot();
 </script>
