@@ -24,8 +24,9 @@ from fantasy.projections.service import ProjectionService
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 pd.set_option("display.width", 140)
 
-TRAIN = [2021, 2022, 2023, 2024]
 TEST = 2025
+from fantasy.projections.service import default_train_seasons
+TRAIN = default_train_seasons(TEST)
 WEEKS = range(1, 18)
 SKILL = {"QB", "RB", "WR", "TE"}
 START_THRESHOLD = 6.0  # ESPN-projected pts; focus on startable players

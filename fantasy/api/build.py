@@ -13,7 +13,6 @@ from fantasy.leagues import LeagueRef, registry
 from fantasy.orchestrator.store import Store
 
 log = logging.getLogger(__name__)
-TRAIN = [2021, 2022, 2023, 2024]
 
 
 def _client_and_settings(ref: LeagueRef):
@@ -40,12 +39,12 @@ def build_shell(ref: LeagueRef, week: int | None = None) -> dict:
 
 def build_full(ref: LeagueRef, week: int | None = None) -> dict:
     """Heavy: train the model + assemble recommendations + report card."""
-    from fantasy.projections.service import ProjectionService
+    from fantasy.projections.service import ProjectionService, default_train_seasons
 
     client, league = _client_and_settings(ref)
     wk = _pick_week(client, week)
     log.info("Building full snapshot for league %s wk%s ...", ref.league_id, wk)
-    service = ProjectionService(league).fit(TRAIN)
+    service = ProjectionService(league).fit(default_train_seasons(ref.season))
     payload = assemble(service, league, Store(), ref.season, wk, client=client,
                        my_team_id=ref.team_id)
     write_snapshot(payload, ref.league_id)

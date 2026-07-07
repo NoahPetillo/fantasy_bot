@@ -3,65 +3,102 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
 <title>Connect your ESPN account</title>
 <style>
-  :root {
-    --bg: #0f1115; --card: #171a21; --line: #262b36; --text: #e7ebf0;
-    --muted: #9aa4b2; --accent: #d64d2f; --accent2: #2f7de0; --ok: #35c07f; --err: #e0574b;
+  :root{
+    --bg:#0a0f1c; --panel:#111a2e; --inset:#0b1120;
+    --line:rgba(255,255,255,.09); --line-strong:rgba(255,255,255,.16);
+    --text:#e6edf7; --muted:#9aabc7; --faint:#8291ad;
+    --accent:#d64d2f; --blue:#3b82f6; --ok:#22c55e; --err:#ef4444;
+    --speed:180ms; --ease:cubic-bezier(.22,1,.36,1);
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .wrap { max-width: 640px; margin: 0 auto; padding: 40px 20px 64px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  h3 { font-size: 18px; margin: 20px 0 8px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .copy p { margin: 10px 0; }
-  .copy code { background: #0d0f13; border: 1px solid var(--line); border-radius: 5px;
-    padding: 1px 5px; font-size: 13px; }
-  .copy a { color: var(--accent2); }
-  label.field { display: block; margin: 14px 0 4px; color: var(--muted); font-size: 13px; }
-  input[type=text] { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
-    background: #0d0f13; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .consent { display: flex; gap: 10px; align-items: flex-start; margin: 22px 0 6px;
-    padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #0d0f13; }
-  .consent input { margin-top: 3px; width: 17px; height: 17px; flex: none; }
-  .consent label { color: var(--text); }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-  button { border: 0; border-radius: 9px; padding: 11px 18px; font-weight: 600; font-size: 14px;
-    cursor: pointer; color: #fff; }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  #connectBtn { background: var(--accent); }
-  .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
-  .danger { background: transparent; border: 1px solid var(--err); color: var(--err); }
-  #msg { margin-top: 16px; padding: 12px 14px; border-radius: 9px; font-size: 14px; display: none; }
-  #msg.ok { display: block; background: rgba(53,192,127,.12); border: 1px solid var(--ok); color: #b9f0d4; }
-  #msg.err { display: block; background: rgba(224,87,75,.12); border: 1px solid var(--err); color: #f4c2bd; }
-  #status { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
-  .dot.on { background: var(--ok); }
-  .leagues { margin-top: 14px; font-size: 13px; color: var(--muted); }
-  .leagues li { color: var(--text); }
-  footer { color: var(--muted); font-size: 12px; margin-top: 26px; text-align: center; line-height: 1.5; }
-  details { margin-top: 22px; } summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-  details input { margin-top: 8px; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:640px;margin:0 auto;padding:40px 20px 64px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px}
+  @media(max-width:560px){.card{padding:20px}}
+  h1{font-size:22px;margin:0 0 4px;text-wrap:balance}
+  h1::before{content:"◆ ";color:var(--accent);font-size:16px}
+  h3{font-size:15px;margin:20px 0 8px}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .copy p{margin:10px 0}
+  .copy code{background:var(--inset);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:13px}
+  .copy a{color:var(--blue)}
+  .howto{margin:16px 0;border:1px solid var(--line);border-radius:10px;background:var(--inset);padding:4px 14px}
+  .howto summary{cursor:pointer;color:var(--blue);font-size:14px;padding:10px 0;font-weight:600}
+  .howto ol{margin:4px 0 14px;padding-left:20px;font-size:13px;color:var(--muted)}
+  .howto li{margin:8px 0}
+  .howto code{background:#050a14;border:1px solid var(--line);padding:1px 5px;border-radius:5px;font-size:12px}
+  .howto a{color:var(--blue)}
+  label.field{display:block;margin:14px 0 4px;color:var(--faint);font-size:13px}
+  input[type=text]{width:100%;padding:11px 12px;border-radius:9px;border:1px solid var(--line);
+    background:var(--inset);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  input[type=text]:focus{outline:none;border-color:var(--blue)}
+  input::placeholder{color:var(--faint)}
+  .hint{font-size:12px;margin:4px 0 0;min-height:16px;color:var(--faint)}
+  .hint.bad{color:#f4b0a8}.hint.good{color:#bff0d0}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin:22px 0 6px;
+    padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
+  .consent input{margin-top:3px;width:17px;height:17px;flex:none}
+  .consent label{color:var(--text)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  button{border:0;border-radius:9px;padding:12px 18px;min-height:44px;font-weight:600;font-size:14px;
+    cursor:pointer;color:#fff;transition:filter var(--speed) var(--ease)}
+  button:hover{filter:brightness(1.12)}
+  button:disabled{opacity:.45;cursor:not-allowed;filter:none}
+  #connectBtn{background:var(--accent)}
+  .ghost{background:transparent;border:1px solid var(--line-strong);color:var(--text)}
+  .danger{background:transparent;border:1px solid var(--err);color:#f4b0a8}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  #msg{margin-top:16px;padding:12px 14px;border-radius:9px;font-size:14px;display:none}
+  #msg.ok{display:block;background:rgba(34,197,94,.12);border:1px solid var(--ok);color:#b9f0d4}
+  #msg.err{display:block;background:rgba(239,68,68,.12);border:1px solid var(--err);color:#f4c2bd}
+  #status{font-size:13px;color:var(--muted);margin-bottom:18px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--faint);margin-right:6px}
+  .dot.on{background:var(--ok)}
+  .leagues{margin-top:14px;font-size:13px;color:var(--muted)}
+  .leagues li{color:var(--text)}
+  footer{color:var(--faint);font-size:12px;margin-top:26px;text-align:center;line-height:1.5}
+  footer a{color:var(--faint)}
+  details.dev{margin-top:22px}
+  details.dev summary{color:var(--faint);font-size:12px;cursor:pointer}
+  details.dev input{margin-top:8px}
+  @media (prefers-reduced-motion:reduce){*{transition-duration:1ms!important}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1>Connect your ESPN account</h1>
-    <p class="sub">One-time setup so we can read your league data on your behalf.</p>
+    <p class="sub">One-time setup so we can read your league data on your behalf. Read-only: we can never make moves or change anything on ESPN.</p>
 
     <div id="status"><span class="dot" id="statusDot"></span><span id="statusText">Checking…</span></div>
+
+    <details class="howto" open>
+      <summary>How to find your two cookies (60 seconds)</summary>
+      <ol>
+        <li>Open <a href="https://www.espn.com/fantasy/football/" target="_blank" rel="noopener">ESPN Fantasy</a> in a new tab and make sure you're logged in.</li>
+        <li>Open your browser's developer tools:<br/>
+            <strong>Chrome / Edge:</strong> press <code>F12</code> (Mac: <code>⌥⌘I</code>) → <strong>Application</strong> tab → <strong>Cookies</strong> → <code>https://www.espn.com</code><br/>
+            <strong>Safari:</strong> Settings → Advanced → "Show features for web developers", then Develop → Show Web Inspector → <strong>Storage</strong> → Cookies<br/>
+            <strong>Firefox:</strong> press <code>F12</code> → <strong>Storage</strong> tab → Cookies</li>
+        <li>Find the cookie named <code>espn_s2</code> and copy its whole value — it's long, around 200+ characters.</li>
+        <li>Find the cookie named <code>SWID</code> and copy its value <strong>including the curly braces</strong>, like <code>{1234ABCD-…}</code>.</li>
+        <li>Paste both below, tick the consent box, and hit Connect. Cookies stay valid for months unless you log out of ESPN.</li>
+      </ol>
+    </details>
 
     <div class="copy" id="consentCopy">Loading…</div>
 
     <label class="field" for="s2">espn_s2</label>
     <input type="text" id="s2" autocomplete="off" spellcheck="false" placeholder="paste your espn_s2 cookie" />
+    <div class="hint" id="s2Hint"></div>
     <label class="field" for="swid">SWID</label>
-    <input type="text" id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-...}" />
+    <input type="text" id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" />
+    <div class="hint" id="swidHint"></div>
 
     <div class="consent">
       <input type="checkbox" id="consentCheck" />
@@ -77,14 +114,14 @@
     <div id="msg"></div>
     <div class="leagues" id="leagues"></div>
 
-    <details>
+    <details class="dev">
       <summary>Developer: paste a Clerk session token (temporary — Phase 4 adds sign-in)</summary>
       <input type="text" id="devToken" placeholder="Bearer token" style="width:100%" />
     </details>
   </div>
   <footer>
     Not affiliated with, authorized, or endorsed by ESPN or The Walt Disney Company.<br/>
-    <a href="/privacy" style="color:var(--muted)">Privacy</a> · <a href="/terms" style="color:var(--muted)">Terms</a>
+    <a href="/">Back to dashboard</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
   </footer>
 </div>
 
@@ -140,7 +177,18 @@ function showLeagues(list){
       `${l.season != null ? " (" + esc(String(l.season)) + ")" : ""}</li>`).join("") + "</ul>";
 }
 
+function validateFields(){
+  const s2 = $("s2").value.trim(), swid = $("swid").value.trim();
+  const s2h = $("s2Hint"), swh = $("swidHint");
+  if (!s2){ s2h.textContent = ""; s2h.className = "hint"; }
+  else if (s2.length < 80){ s2h.textContent = "Looks too short — espn_s2 is ~200+ characters. Copy the whole value."; s2h.className = "hint bad"; }
+  else { s2h.textContent = "Looks right."; s2h.className = "hint good"; }
+  if (!swid){ swh.textContent = ""; swh.className = "hint"; }
+  else if (!/^\{[0-9A-Fa-f-]{30,40}\}$/.test(swid)){ swh.textContent = "SWID should look like {1234ABCD-12AB-…} — include the curly braces."; swh.className = "hint bad"; }
+  else { swh.textContent = "Looks right."; swh.className = "hint good"; }
+}
 function updateConnectEnabled(){
+  validateFields();
   $("connectBtn").disabled = !($("consentCheck").checked && $("s2").value.trim() && $("swid").value.trim());
 }
 
@@ -181,10 +229,10 @@ $("connectBtn").addEventListener("click", async () => {
       espn_s2: $("s2").value.trim(), swid: $("swid").value.trim(),
       consent: true, consent_version: CONSENT_VERSION });
     msg("ESPN connected. Your cookies are encrypted and stored.", true);
-    $("s2").value = ""; $("swid").value = "";
+    $("s2").value = ""; $("swid").value = ""; validateFields();
     showLeagues(r.leagues_found);
     await refreshStatus();
-  } catch (e){ msg(e.message, false); }
+  } catch (e){ msg(e.message + " — cookies expire when you log out of ESPN; re-copy them while logged in.", false); }
   updateConnectEnabled();
 });
 
@@ -192,8 +240,8 @@ $("testBtn").addEventListener("click", async () => {
   try {
     const r = await api("POST", "/api/espn/test");
     if (r.valid){ msg("Connection is working.", true); showLeagues(r.leagues_found); }
-    else msg(r.purged ? "Cookies are no longer valid and were removed. Please reconnect."
-                      : "Cookies are no longer valid — please reconnect.", false);
+    else msg(r.purged ? "Cookies are no longer valid and were removed. Re-copy them from espn.com while logged in."
+                      : "Cookies are no longer valid — re-copy them from espn.com while logged in.", false);
     await refreshStatus();
   } catch (e){ msg(e.message, false); }
 });

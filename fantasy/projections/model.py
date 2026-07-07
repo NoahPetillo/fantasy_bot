@@ -34,11 +34,35 @@ _DEFAULT_PARAMS = dict(
     random_state=13,
 )
 
+# Per-position hyperparameters from a randomized search (train 2021-2023, early
+# stopping on 2024 startable rows; verified out-of-sample on 2025 and 2023).
+# Positions differ: WR wants shallow/heavily-regularized trees, RB deeper ones.
+_POSITION_PARAMS: dict[str, dict] = {
+    "QB": dict(n_estimators=119, max_depth=4, learning_rate=0.03,
+               min_child_weight=1.0, subsample=0.7, colsample_bytree=1.0, reg_lambda=1.0),
+    "RB": dict(n_estimators=185, max_depth=5, learning_rate=0.02,
+               min_child_weight=10.0, subsample=0.9, colsample_bytree=1.0, reg_lambda=10.0),
+    "WR": dict(n_estimators=56, max_depth=3, learning_rate=0.05,
+               min_child_weight=20.0, subsample=0.7, colsample_bytree=0.8, reg_lambda=1.0),
+    "TE": dict(n_estimators=125, max_depth=3, learning_rate=0.02,
+               min_child_weight=5.0, subsample=0.7, colsample_bytree=0.6, reg_lambda=10.0),
+}
+
+
+def position_params(position: str) -> dict:
+    """Tuned hyperparameters for a position, falling back to the defaults."""
+    return {**_DEFAULT_PARAMS, **_POSITION_PARAMS.get(position, {})}
+
+# Training rows from season s get weight SEASON_DECAY ** (latest_season - s):
+# the game drifts (rules, scheme trends, player pool), so recent seasons matter more.
+SEASON_DECAY = 0.85
+
 
 @dataclass
 class PositionModel:
     position: str
     params: dict = field(default_factory=lambda: dict(_DEFAULT_PARAMS))
+    season_decay: float = SEASON_DECAY
     model: XGBRegressor | None = None
     features: list[str] = field(default_factory=list)
 
@@ -47,8 +71,12 @@ class PositionModel:
         self.features = feature_columns(feat)
         X = sub[self.features].astype(float)
         y = sub["y"].astype(float)
+        w = None
+        if self.season_decay and self.season_decay < 1.0:
+            age = sub["season"].max() - sub["season"]
+            w = np.power(self.season_decay, age.astype(float))
         self.model = XGBRegressor(**self.params)
-        self.model.fit(X, y)
+        self.model.fit(X, y, sample_weight=w)
         log.info("Trained %s model on %d rows, %d features", self.position, len(sub), len(self.features))
         return self
 
@@ -71,13 +99,15 @@ class ProjectionModel:
     """Holds one PositionModel per position and projects a whole feature table."""
 
     def __init__(self, params: dict | None = None):
-        self.params = params or dict(_DEFAULT_PARAMS)
+        # Explicit params override the tuned per-position sets for every position.
+        self.params = params
         self.models: dict[str, PositionModel] = {}
 
     def fit(self, feat: pd.DataFrame) -> "ProjectionModel":
         for pos in POSITIONS:
             if (feat["position"] == pos).any():
-                self.models[pos] = PositionModel(pos, dict(self.params)).fit(feat)
+                p = dict(self.params) if self.params else position_params(pos)
+                self.models[pos] = PositionModel(pos, p).fit(feat)
         return self
 
     def predict(self, feat: pd.DataFrame) -> pd.Series:

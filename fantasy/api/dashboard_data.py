@@ -117,8 +117,10 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
         "priority": bool(p.payload.get("priority")),
     } for p in trade_props]
 
-    # Optimal lineup rows for the dashboard.
-    mine = board[board["player_id"].isin(snap.my_roster())]
+    # Optimal lineup rows for the dashboard (never start a ruled-out player).
+    injuries = getattr(snap, "injury_status", {})
+    mine = board[board["player_id"].isin(snap.my_roster())
+                 & ~board["player_id"].isin(snap.ruled_out())]
     rows, total = [], 0.0
     if not mine.empty:
         players = [(r.player_id, r.position, float(r.proj)) for r in mine.itertuples(index=False)]
@@ -130,7 +132,8 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
                 total += float(r["proj"])
                 rows.append({"slot": slot, "name": r["player_display_name"], "pos": r["position"],
                              "proj": round(float(r["proj"]), 1),
-                             "floor": r.get("floor"), "ceiling": r.get("ceiling")})
+                             "floor": r.get("floor"), "ceiling": r.get("ceiling"),
+                             "inj": injuries.get(pid) or None})
 
     standings = _standings(client, snap.my_team_id) if client else []
     feed = _feed(store, fused)
@@ -157,7 +160,10 @@ def assemble(service, league, store: ProposalStore, season: int, week: int, clie
         {"label": "Pending", "value": str(pending), "sub": "awaiting your approval"},
     ]
 
+    import time
+
     return {
+        "generated_at": int(time.time()),
         "team": {"name": snap.team_names.get(snap.my_team_id, "My Team"),
                  "league": league.summary(), "week": week, "season": season,
                  "mode": settings.execution_mode.value,
@@ -230,7 +236,10 @@ def shell_snapshot(client, league, season: int, week: int, my_team_id: int | Non
     note = ("Full analysis not built yet — tap “Build analysis”."
             if drafted else "Season hasn’t started (no draft yet). Settings are loaded; "
             "build the full analysis once rosters exist.")
+    import time
+
     return {
+        "generated_at": int(time.time()),
         "team": {"name": me, "league": league.summary(), "week": week, "season": season,
                  "mode": settings.execution_mode.value, "team_id": my_team_id,
                  "prioritize_trades": settings.prioritize_trades,
@@ -253,18 +262,29 @@ def _trade_block(snap, b, league, remaining_weeks: int) -> dict:
     id and carry their owning team, so the picker can scope "give" to my roster and
     "get" to other teams, and the analyzer can price a package against real rosters.
     Includes every ROSTERED player (union of all teams) — free agents are a waiver
-    concern, not tradeable. proj/vor default to 0 for ids without a projection."""
+    concern, not tradeable. proj/vor default to 0 for ids without a projection.
+    ``games`` is each player's bye-aware remaining-game count so ROS values are
+    honest; ``inj`` carries a non-ACTIVE ESPN injury status for the UI."""
+    from fantasy.decisions.ros import games_left_by_team
+
+    games = games_left_by_team(snap.season, snap.week, remaining_weeks)
     players: dict[str, dict] = {}
     for tid, pids in snap.teams.items():
         for pid in pids:
             row = b.loc[pid] if pid in b.index else None
-            players[pid] = {
+            nfl_team = str(row["team"]) if row is not None and "team" in row else ""
+            entry = {
                 "name": str(row["player_display_name"]) if row is not None else snap.names.get(pid, pid),
                 "pos": str(row["position"]) if row is not None else snap.positions.get(pid, "?"),
                 "proj": round(float(row["proj"]), 1) if row is not None else 0.0,
                 "vor": round(float(row["vor"]), 1) if row is not None else 0.0,
                 "team_id": int(tid),
+                "games": int(games.get(nfl_team, remaining_weeks)),
             }
+            status = getattr(snap, "injury_status", {}).get(pid)
+            if status:
+                entry["inj"] = status
+            players[pid] = entry
     return {
         "my_team_id": int(snap.my_team_id),
         "remaining_weeks": int(remaining_weeks),
@@ -321,8 +341,8 @@ def analyze_trade(give, get, payload: dict) -> dict:
     counter_roster = teams.get(str(next(iter(get_teams)))) if single else None
 
     rem = int(tb.get("remaining_weeks", 1)) or 1
-    ros = {pid: p["proj"] * rem for pid, p in players.items()}
-    ros_vor = {pid: p["vor"] * rem for pid, p in players.items()}
+    ros = {pid: p["proj"] * p.get("games", rem) for pid, p in players.items()}
+    ros_vor = {pid: p["vor"] * p.get("games", rem) for pid, p in players.items()}
     pos = {pid: p["pos"] for pid, p in players.items()}
     names = {pid: p["name"] for pid, p in players.items()}
     league = LeagueSettings(team_count=tb.get("team_count", 12),

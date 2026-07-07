@@ -124,6 +124,55 @@ def team_week_context(seasons: list[int], refresh: bool = False) -> pd.DataFrame
     return ctx
 
 
+def season_schedule(season: int, refresh: bool = False) -> pd.DataFrame:
+    """The raw regular-season schedule (one row per game), cached.
+
+    Unlike ``team_week_context`` this keeps games with no betting lines yet, so it
+    can answer "who plays whom in week W" for FUTURE weeks — the projection
+    service needs that to build a board for a week that hasn't been played.
+    """
+    key = f"schedule_{season}"
+    path = _cache_path(key)
+    if not refresh:
+        try:
+            return pd.read_parquet(path)
+        except (FileNotFoundError, OSError):
+            pass
+    import nflreadpy as nfl
+
+    sch = nfl.load_schedules(seasons=[season]).to_pandas()
+    if "game_type" in sch.columns:
+        sch = sch[sch["game_type"] == "REG"]
+    out = sch[["season", "week", "home_team", "away_team"]].copy()
+    out.to_parquet(path, index=False)
+    log.info("Cached schedule -> %s (%d games)", path, len(out))
+    return out
+
+
+def week_opponents(season: int, week: int) -> dict[str, str]:
+    """team -> opponent for one week. Teams absent from the map are on bye."""
+    sch = season_schedule(season)
+    wk = sch[sch["week"] == week]
+    opp: dict[str, str] = {}
+    for r in wk.itertuples(index=False):
+        opp[r.home_team] = r.away_team
+        opp[r.away_team] = r.home_team
+    return opp
+
+
+def team_bye_weeks(season: int) -> dict[str, int]:
+    """team -> bye week (the regular-season week the team doesn't play)."""
+    sch = season_schedule(season)
+    if sch.empty:
+        return {}
+    weeks = set(range(1, int(sch["week"].max()) + 1))
+    plays: dict[str, set[int]] = {}
+    for r in sch.itertuples(index=False):
+        plays.setdefault(r.home_team, set()).add(int(r.week))
+        plays.setdefault(r.away_team, set()).add(int(r.week))
+    return {t: min(weeks - w) for t, w in plays.items() if weeks - w}
+
+
 def player_snap_share(seasons: list[int], refresh: bool = False) -> pd.DataFrame:
     """Per (player_id, season, week) offensive snap share, keyed to gsis player_id.
 

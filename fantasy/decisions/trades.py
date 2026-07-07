@@ -53,9 +53,9 @@ def recommend_trades(
     b = board.set_index("player_id")
     # Raw ROS points drive LINEUP value (points win weeks); ROS VOR drives cross-
     # positional VALUE/fairness (a high-scoring QB isn't "worth" more than a WR
-    # once replacement level is accounted for).
-    ros = {pid: float(b.loc[pid, "proj"]) * remaining_weeks for pid in b.index}
-    ros_vor = {pid: float(b.loc[pid, "vor"]) * remaining_weeks for pid in b.index}
+    # once replacement level is accounted for). Both are bye-aware.
+    from fantasy.decisions.ros import ros_maps
+    ros, ros_vor = ros_maps(board, league, snap.season, snap.week, remaining_weeks)
     pos = {pid: b.loc[pid, "position"] for pid in b.index}
     name = {pid: b.loc[pid, "player_display_name"] for pid in b.index}
 

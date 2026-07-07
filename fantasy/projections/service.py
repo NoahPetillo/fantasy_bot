@@ -24,6 +24,16 @@ from fantasy.valuation.vor import compute_vor
 log = logging.getLogger(__name__)
 
 
+def default_train_seasons(target_season: int, n: int = 5) -> list[int]:
+    """The last ``n`` completed seasons before ``target_season``.
+
+    Callers pass the season being projected (e.g. 2026) and train on everything
+    up to and including the season before it. Recency decay in the model keeps
+    the oldest seasons from dominating, so more history is strictly better.
+    """
+    return list(range(target_season - n, target_season))
+
+
 def overlay_espn(cur: pd.DataFrame, espn_proj: dict[str, float] | None) -> pd.DataFrame:
     """Set ``proj`` to ESPN's number where available (primary), else keep our
     model's, and record ``proj_source`` per row."""
@@ -87,6 +97,15 @@ class ProjectionService:
         assert self.model is not None, "call fit() first"
         seasons = sorted(set(self.train_seasons) | {season})
         wk = weekly if weekly is not None else load_weekly(seasons)
+        # Teams scheduled this week but with no stat rows yet (all of them before
+        # kickoff; the Sun/Mon slates after Thursday stats land) get synthetic
+        # point-in-time rows, so an upcoming or partially-played week still
+        # projects every player. Fully-played weeks are untouched.
+        from fantasy.projections.features import future_frame
+
+        fut = future_frame(wk, season, week)
+        if not fut.empty:
+            wk = pd.concat([wk, fut], ignore_index=True)
         feat = build_features(wk, self.engine)
         cur = feat[(feat["season"] == season) & (feat["week"] == week)].copy()
         if cur.empty:
@@ -95,9 +114,13 @@ class ProjectionService:
         cur["proj"] = self.blender.predict(cur.assign(proj=cur["proj_model"])) \
             if self.blender.global_weights is not None else cur["proj_model"]
 
+        # Played weeks of the current season: the leak-free ground truth that
+        # calibrates every consensus source's in-season bias.
+        past = feat[(feat["season"] == season) & (feat["week"] < week)].copy()
+
         from fantasy.config import settings
         if settings.projection_consensus:
-            cur = self._consensus(cur, season, week, espn_proj)
+            cur = self._consensus(cur, season, week, espn_proj, past)
         else:
             cur = overlay_espn(cur, espn_proj)
         cur = self._apply_expert_deltas(cur, fused_signals)
@@ -123,23 +146,51 @@ class ProjectionService:
         return cur
 
     def _consensus(self, cur: pd.DataFrame, season: int, week: int,
-                   espn_proj: dict[str, float] | None) -> pd.DataFrame:
+                   espn_proj: dict[str, float] | None,
+                   past: pd.DataFrame | None = None) -> pd.DataFrame:
         """Average our model with ESPN + Sleeper (whatever's available) per player —
-        the wisdom-of-crowds backbone. Falls back to our model where uncovered."""
+        the wisdom-of-crowds backbone. Falls back to our model where uncovered.
+
+        Every source is bias-calibrated on its own in-season errors first
+        (leak-free, per position, shrunk) — blending an uncalibrated source makes
+        the consensus WORSE than the model alone (see calibration.py for numbers).
+        """
+        from fantasy.projections.calibration import SourceCalibrator
         from fantasy.projections.consensus import consensus
         from fantasy.projections.props import PlayerPropSource
         from fantasy.projections.sources import SleeperProjectionSource
 
+        sleeper_src = SleeperProjectionSource()
         sources: dict[str, dict] = {"model": dict(zip(cur["player_id"], cur["proj"]))}
         if espn_proj:
             sources["espn"] = espn_proj
-        sl = SleeperProjectionSource().weekly_points(season, week, self.league)
+        sl = sleeper_src.weekly_points(season, week, self.league)
         if sl:
             sources["sleeper"] = sl
         if PlayerPropSource.enabled():  # the sharpest source, if an odds key is set
             pr = PlayerPropSource().weekly_points(season, week, self.league)
             if pr:
                 sources["props"] = pr
+
+        fmt = getattr(getattr(self.league, "scoring_format", None), "value", "")
+        cal = SourceCalibrator(season, scope=fmt)
+        if past is not None and not past.empty:
+            # Backfill sources whose past weeks are reconstructable, then record
+            # this week's raw numbers (first write wins) and debias everything.
+            for w in sorted(past["week"].unique()):
+                w = int(w)
+                if "sleeper" in sources:
+                    cal.record("sleeper", w, sleeper_src.weekly_points(season, w, self.league))
+                wk_rows = past[past["week"] == w]
+                model_past = self.blender.predict(wk_rows.assign(proj=self.model.predict(wk_rows))) \
+                    if self.blender.global_weights is not None else self.model.predict(wk_rows)
+                cal.record("model", w, dict(zip(wk_rows["player_id"], model_past)))
+        for name, proj in sources.items():
+            cal.record(name, week, proj)
+        if past is not None and not past.empty:
+            positions = dict(zip(cur["player_id"], cur["position"]))
+            sources = cal.calibrate(sources, positions, past, week)
+
         means, counts = consensus(sources)
         cur["proj_sources"] = cur["player_id"].map(counts).fillna(1).astype(int)
         cur["proj_source"] = "+".join(sources.keys())
