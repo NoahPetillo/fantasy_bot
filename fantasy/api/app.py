@@ -650,6 +650,21 @@ def api_chat(request: Request, body: dict = Body(...),
     lg = get_league(db, user, body.get("league")) if body.get("league") else (leagues[0] if leagues else None)
     snap = (latest_snapshot(db, lg.id) if lg else {}) or {}
     ctx = ChatContext.from_snapshot(snap)
+    # Player stats/projections come from the (possibly older) snapshot, but league
+    # CONFIG must reflect the user's CURRENT rules — the snapshot can lag a rules
+    # edit or a not-yet-successful rebuild. Overlay live merged settings (no ESPN
+    # call) so "how does my league score" always sees the latest HC/IDP/etc rules.
+    if lg is not None:
+        try:
+            ls = effective_settings(db, lg)
+            if ls.scoring:  # only override when we actually have live rules
+                ctx.scoring = {k: v for k, v in ls.scoring.items() if v}
+                ctx.te_premium = dict(ls.position_reception_bonus or {})
+                ctx.roster = ls.roster.starter_slots
+                ctx.league_summary = ls.summary()
+                ctx.season = ls.season or ctx.season
+        except Exception as e:  # noqa: BLE001 — fall back to snapshot settings
+            log.warning("chat: live settings overlay failed (%s); using snapshot", e)
     return answer(question, ctx)
 
 

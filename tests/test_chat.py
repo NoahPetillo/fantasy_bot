@@ -100,3 +100,55 @@ def test_fallback_league_settings():
                     scoring={"receptions": 1.0, "passing_tds": 4.0})
     out = get_league_settings(c)
     assert "receptions=1.0" in out and "passing_tds=4.0" in out
+
+
+def test_league_settings_surfaces_head_coach_and_idp():
+    """Custom HC/IDP/return/target scoring must be described plainly so the model
+    doesn't report them as 'not in the league settings'."""
+    c = ChatContext(
+        season=2026, league_summary="My League (2026)",
+        scoring={"receptions": 0.5, "receiving_targets": 0.25,
+                 "kickoff_return_yards": 0.25, "def_tackles_solo": 1.5,
+                 "hc_team_win": 5.0, "hc_team_loss": -5.0},
+        roster={"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2, "DP": 1, "HC": 1, "K": 1},
+    )
+    out = get_league_settings(c).lower()
+    assert "head coach" in out and "hc_team_win" in out
+    assert "+5" in out and "-5" in out
+    assert "per target" in out
+    assert "individual defensive player" in out or "idp" in out
+
+
+def test_chat_endpoint_uses_live_league_rules(webapp, monkeypatch):
+    """The chat must answer league-config questions from the user's CURRENT rules,
+    not a stale/missing snapshot — the reported HC-scoring blind spot."""
+    from fantasy.db.repos import add_league
+    from fantasy.league_rules import save_overrides
+    import fantasy.chat.agent as agent_mod
+
+    user = webapp.make_user("owner")
+    lg = add_league(webapp.db, user, espn_league_id=99, team_id=1, season=2026, name="HC League")
+    save_overrides(webapp.db, lg, {
+        "scoring": {"hc_team_win": 5.0, "hc_team_loss": -5.0, "receptions": 0.5},
+        "roster": {"slots": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 2,
+                             "DP": 1, "HC": 1, "K": 1, "BE": 7}},
+    })
+
+    captured = {}
+
+    def fake_answer(question, ctx):
+        captured["scoring"] = dict(ctx.scoring)
+        captured["roster"] = dict(ctx.roster)
+        return {"answer": "ok", "mode": "test", "tools_used": []}
+
+    # api_chat does `from fantasy.chat.agent import answer` at call time.
+    monkeypatch.setattr(agent_mod, "answer", fake_answer)
+
+    webapp.auth_as(user)
+    r = webapp.client.post("/api/chat",
+                           json={"league": str(lg.id), "question": "how do head coaches work"})
+    assert r.status_code == 200
+    # No snapshot was ever built, yet the live rules reached the chat context.
+    assert captured["scoring"].get("hc_team_win") == 5.0
+    assert captured["scoring"].get("hc_team_loss") == -5.0
+    assert captured["roster"].get("HC") == 1

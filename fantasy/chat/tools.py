@@ -249,12 +249,51 @@ def get_projection(ctx: ChatContext, player: str) -> str:
             f"(model+ESPN+Sleeper consensus), VOR {e['vor']}.")
 
 
+# Plain-English labels for the non-obvious custom scoring keys, so the model
+# describes them correctly instead of overlooking a raw key like "hc_team_win".
+_SCORING_LABELS: dict[str, str] = {
+    "hc_team_win": "head coach — team win",
+    "hc_team_loss": "head coach — team loss",
+    "hc_team_tie": "head coach — team tie",
+    "receiving_targets": "per target",
+    "kickoff_return_yards": "per kick-return yard",
+    "punt_return_yards": "per punt-return yard",
+    "def_tackles_solo": "IDP solo tackle",
+    "def_tackles_total": "IDP total tackle",
+    "def_tackle_assists": "IDP assist tackle",
+    "def_tackles_for_loss": "IDP tackle for loss",
+    "def_passes_defended": "IDP pass defended",
+    "def_fumbles_forced": "IDP forced fumble",
+    "dst_sacks": "sack (IDP/D-ST)",
+    "dst_interceptions": "interception (IDP/D-ST)",
+    "dst_fumbles_recovered": "fumble recovery (IDP/D-ST)",
+}
+_IDP_SLOT_NAMES = {"DP", "LB", "DB", "DL", "DT", "DE", "CB", "S", "ER"}
+
+
 def get_league_settings(ctx: ChatContext) -> str:
     if not ctx.scoring and not ctx.league_summary:
         return "No league is loaded — open a built league to ask about its settings."
-    sc = ", ".join(f"{k}={v}" for k, v in sorted(ctx.scoring.items()) if v) or "n/a"
+    parts = []
+    for k, v in sorted(ctx.scoring.items()):
+        if not v:
+            continue
+        label = _SCORING_LABELS.get(k)
+        parts.append(f"{label} ({k})={v}" if label else f"{k}={v}")
+    sc = ", ".join(parts) or "n/a"
     te = f" TE-premium: {ctx.te_premium}." if ctx.te_premium else ""
-    return f"{ctx.league_summary}\nScoring: {sc}.{te}\nStarting slots: {ctx.roster}."
+    # Explicit call-outs for roster slots that are easy to miss in a raw dict.
+    roster = ctx.roster or {}
+    notes = []
+    if roster.get("HC"):
+        win = ctx.scoring.get("hc_team_win")
+        loss = ctx.scoring.get("hc_team_loss")
+        detail = f" ({win:+g} per team win / {loss:+g} per loss)" if win or loss else ""
+        notes.append(f"This league starts {roster['HC']} head coach (HC slot){detail}.")
+    if any(roster.get(s) for s in _IDP_SLOT_NAMES):
+        notes.append("It starts an individual defensive player (IDP), not a team D/ST.")
+    note_s = ("\n" + " ".join(notes)) if notes else ""
+    return f"{ctx.league_summary}\nScoring: {sc}.{te}\nStarting slots: {roster}.{note_s}"
 
 
 # ── dispatch + schemas ────────────────────────────────────────────────────────
