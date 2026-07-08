@@ -13,6 +13,7 @@ import json
 import logging
 import threading
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -40,6 +41,15 @@ from fantasy.db.repos import (
 )
 from fantasy.espn.client import EspnAuthError
 from fantasy.espn.credentials import build_client_for_user
+from fantasy.espn.rules_catalog import catalog_payload
+from fantasy.league_settings import LeagueSettings
+from fantasy.league_rules import (
+    RulesValidationError,
+    effective_settings,
+    merge_settings,
+    save_overrides,
+    settings_diff,
+)
 from fantasy.orchestrator.influence import influence_stats
 from fantasy.orchestrator.models import Proposal, ProposalKind, ProposalStatus
 from fantasy.orchestrator.store import Store
@@ -56,6 +66,8 @@ app.include_router(billing_router)  # plan status, Stripe checkout/portal/webhoo
 _store: Store | None = None
 # league uuid (str) -> "building" | "done" | "error: ..."
 _build_status: dict[str, str] = {}
+# league uuid (str) -> "building" | "done" | "error: ..." (draft-plan build thread)
+_plan_status: dict[str, str] = {}
 
 
 @app.get("/api/config")
@@ -297,6 +309,167 @@ def api_remove_league(league_id: str, user: User = Depends(get_current_user),
     if not remove_league(db, user, league_id):
         raise HTTPException(404, "league not found")
     return {"ok": True, "removed": league_id}
+
+
+# ── league rules (detected + overrides, merged) ────────────────────────────────
+@app.get("/api/leagues/{league_id}/rules")
+def api_get_rules(league_id: str, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)) -> dict:
+    """Stored rules only — no ESPN call, so this always works even if ESPN is
+    down or the league's rules aren't final yet."""
+    lg = get_league(db, user, league_id)
+    if lg is None:
+        raise HTTPException(404, "league not found")
+    detected = lg.settings_detected
+    overrides = lg.settings_overrides or {}
+    try:
+        merged = merge_settings(detected, overrides)
+    except Exception as e:  # noqa: BLE001 — stored state must never lock the UI out
+        log.warning("Stored rules for league %s fail to merge (%s); serving detected only.",
+                    lg.id, e)
+        try:
+            merged = merge_settings(detected, {})
+        except Exception:  # noqa: BLE001
+            merged = LeagueSettings()
+    return {
+        "detected": detected,
+        "overrides": overrides,
+        "merged": merged.model_dump(mode="json"),
+        "diff": settings_diff(detected, overrides),
+        "catalog": catalog_payload(),
+        "updated_at": lg.settings_updated_at.isoformat() if lg.settings_updated_at else None,
+    }
+
+
+@app.put("/api/leagues/{league_id}/rules")
+def api_put_rules(league_id: str, body: dict = Body(...),
+                  user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)) -> dict:
+    lg = get_league(db, user, league_id)
+    if lg is None:
+        raise HTTPException(404, "league not found")
+    overrides = body.get("overrides")
+    if not isinstance(overrides, dict):
+        raise HTTPException(400, "body must be {\"overrides\": {...}}")
+    try:
+        merged = save_overrides(db, lg, overrides)
+    except RulesValidationError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "merged": merged.model_dump(mode="json"),
+            "stale": {"dashboard": True, "draft_plan": True}}
+
+
+@app.post("/api/leagues/{league_id}/rules/refetch")
+def api_refetch_rules(league_id: str, user: User = Depends(get_current_user),
+                      db: Session = Depends(get_db)) -> dict:
+    """Re-read mSettings with the user's cookies and refresh `settings_detected`
+    (overrides are untouched — this only updates what ESPN reports)."""
+    lg = get_league(db, user, league_id)
+    if lg is None:
+        raise HTTPException(404, "league not found")
+    try:
+        client = build_client_for_user(db, user, lg.espn_league_id, lg.season)
+        ls = client.league_settings()
+    except EspnAuthError:
+        raise HTTPException(502, "Connect your ESPN account first (Settings → Connect ESPN).")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Couldn't reach ESPN for this league: {e}")
+
+    lg.settings_detected = ls.model_dump(mode="json")
+    lg.settings_updated_at = datetime.now(timezone.utc)
+    db.commit()
+    merged = merge_settings(lg.settings_detected, lg.settings_overrides or {})
+    return {
+        "ok": True,
+        "detected": lg.settings_detected,
+        "diff": settings_diff(lg.settings_detected, lg.settings_overrides or {}),
+        "merged": merged.model_dump(mode="json"),
+    }
+
+
+# ── draft plan (season-level strategy; on-demand background build) ─────────────
+def _run_plan_build(user_id: str, league_id: str) -> None:
+    """Background draft-plan build in its own DB session (threads can't share one).
+
+    The plan is season-level and must build even without ESPN cookies, so it uses
+    the merged stored/override settings (``client`` best-effort only). Persists to
+    ``League.draft_plan`` / ``draft_plan_built_at``."""
+    from fantasy.draft.plan import build_draft_plan
+    from fantasy.draft.season_board import build_season_board
+
+    db = get_sessionmaker()()
+    try:
+        user = db.get(User, uuid.UUID(user_id))
+        lg = db.get(League, uuid.UUID(league_id))
+        if user is None or lg is None or lg.user_id != user.id:
+            _plan_status[league_id] = "error: not found"
+            return
+        # Best-effort ESPN client to refresh detected settings; None is fine — the
+        # plan builds off stored/override settings when cookies aren't connected.
+        client = None
+        try:
+            client = build_client_for_user(db, user, lg.espn_league_id, lg.season)
+        except Exception:  # noqa: BLE001 — no/invalid cookies: build from stored rules
+            client = None
+        ls = effective_settings(db, lg, client)
+        board = build_season_board(lg.season, ls)
+        plan = build_draft_plan(ls, lg.season, board, my_slot=None)
+        lg.draft_plan = plan
+        lg.draft_plan_built_at = datetime.now(timezone.utc)
+        db.commit()
+        _plan_status[league_id] = "done"
+    except Exception as e:  # noqa: BLE001
+        log.exception("draft-plan build failed for league %s", league_id)
+        db.rollback()
+        _plan_status[league_id] = f"error: {e}"
+    finally:
+        db.close()
+
+
+@app.post("/api/leagues/{league_id}/draft-plan/build")
+def api_build_draft_plan(league_id: str, user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> dict:
+    lg = get_league(db, user, league_id)
+    if lg is None:
+        raise HTTPException(404, "league not found")
+    key = str(lg.id)
+    if _plan_status.get(key) == "building":
+        return {"ok": True, "status": "building", "note": "already in progress"}
+    _plan_status[key] = "building"
+    threading.Thread(target=_run_plan_build, args=(str(user.id), key), daemon=True).start()
+    return {"ok": True, "status": "building"}
+
+
+@app.get("/api/leagues/{league_id}/draft-plan")
+def api_get_draft_plan(league_id: str, user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)) -> dict:
+    lg = get_league(db, user, league_id)
+    if lg is None:
+        raise HTTPException(404, "league not found")
+    key = str(lg.id)
+    thread_status = _plan_status.get(key)
+    if thread_status == "building":
+        status = "building"
+    elif thread_status and thread_status.startswith("error"):
+        status = thread_status
+    elif lg.draft_plan is not None:
+        status = "done"
+    else:
+        status = "none"
+    # Stale when the rules changed after the plan was built (or the plan was
+    # invalidated — save_overrides clears draft_plan_built_at).
+    stale = False
+    if lg.draft_plan is not None:
+        if lg.draft_plan_built_at is None:
+            stale = True
+        elif lg.settings_updated_at is not None and lg.settings_updated_at > lg.draft_plan_built_at:
+            stale = True
+    return {
+        "status": status,
+        "built_at": lg.draft_plan_built_at.isoformat() if lg.draft_plan_built_at else None,
+        "stale": stale,
+        "plan": lg.draft_plan,
+    }
 
 
 def _run_user_build(user_id: str, league_id: str, week: int | None) -> None:

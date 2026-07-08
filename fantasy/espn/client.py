@@ -16,12 +16,22 @@ the approval gate in a separate, swappable module (Phase 3).
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 
+import pandas as pd
 import requests
 
 from fantasy.config import settings as app_settings
-from fantasy.espn.stat_ids import POSITION_IDS, STATID_TO_CANONICAL, slot_name
+from fantasy.espn.stat_ids import (
+    IDP_SLOTS,
+    PER_N_STATIDS,
+    STATID_TO_CANONICAL,
+    position_name,
+    pro_team_abbr,
+    slot_name,
+)
 from fantasy.league_settings import LeagueSettings, RosterRequirements, WaiverType
 
 log = logging.getLogger(__name__)
@@ -34,10 +44,22 @@ USER_AGENT = (
 # ESPN receptions statId, used to detect TE-premium via pointsOverrides.
 _RECEPTIONS_STAT_ID = 53
 _TE_POSITION_ID = 4
+# Season-projection cache TTL — preseason numbers move as ESPN updates them.
+_SEASON_PROJ_TTL_SECONDS = 24 * 3600
 
 
 class EspnAuthError(RuntimeError):
     pass
+
+
+def _f(value) -> float | None:
+    """Coerce to float, or None if unset/uncoercible (0.0 is kept)."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class EspnClient:
@@ -141,8 +163,7 @@ class EspnClient:
         ls.keeper_count = int(draft.get("keeperCount", 0) or 0)
         ls.is_dynasty = bool(draft.get("keeperCount", 0)) and draft.get("type") == "OFFLINE"
         ls.uses_idp = any(
-            POSITION_IDS.get(0) and s in {"DT", "DE", "LB", "DL", "CB", "S", "DB", "DP", "ER"}
-            for s in ls.roster.slots
+            s in IDP_SLOTS and n > 0 for s, n in ls.roster.slots.items()
         )
         log.info("Loaded league settings: %s", ls.summary())
         return ls
@@ -152,6 +173,7 @@ class EspnClient:
         scoring_items: list[dict],
     ) -> tuple[dict[str, float], dict[int, float], dict[str, float]]:
         canonical: dict[str, float] = {}
+        per_n_extra: dict[str, float] = {}
         raw_map: dict[int, float] = {}
         reception_bonus: dict[str, float] = {}
         base_rec_points = 0.0
@@ -160,18 +182,36 @@ class EspnClient:
             stat_id = int(item.get("statId", -1))
             pts = float(item.get("points", 0.0) or 0.0)
             raw_map[stat_id] = pts
+            per_n = PER_N_STATIDS.get(stat_id)
+            if per_n is not None:
+                # "every N units" rule -> accumulated separately and added to the
+                # per-unit value AFTER the loop, so the result doesn't depend on
+                # whether ESPN lists the per-unit or per-N item first.
+                name, n = per_n
+                if pts:
+                    per_n_extra[name] = per_n_extra.get(name, 0.0) + pts / n
+                continue
             name = STATID_TO_CANONICAL.get(stat_id)
             if name is None:
                 if pts:
                     unknown.append(stat_id)
                 continue
             canonical[name] = pts
+            overrides_raw = item.get("pointsOverrides", {}) or {}
+            if overrides_raw and stat_id != _RECEPTIONS_STAT_ID:
+                log.info(
+                    "statId %s has position pointsOverrides %s (only the TE "
+                    "reception premium is modeled; base points used otherwise)",
+                    stat_id, overrides_raw,
+                )
             if stat_id == _RECEPTIONS_STAT_ID:
                 base_rec_points = pts
                 overrides = item.get("pointsOverrides", {}) or {}
                 te_override = overrides.get(str(_TE_POSITION_ID))
                 if te_override is not None and float(te_override) != pts:
                     reception_bonus["TE"] = float(te_override) - base_rec_points
+        for name, extra in per_n_extra.items():
+            canonical[name] = canonical.get(name, 0.0) + extra
         if unknown:
             log.warning(
                 "Unrecognized scoring statIds with nonzero points (verify in stat_ids.py): %s",
@@ -260,3 +300,128 @@ class EspnClient:
         except Exception as e:  # noqa: BLE001
             log.warning("week_projections free_agents failed: %s", e)
         return out
+
+    # ── season-long per-stat projections (kona_player_info) ───────────────────
+    def season_stat_projections(self, refresh: bool = False) -> pd.DataFrame:
+        """ESPN's season projection for every player as a per-stat frame.
+
+        Reads the public ``kona_player_info`` view (works unauthenticated — these
+        projections and draft ranks are public). For each player we keep the
+        SEASON projection stat line (the ``stats`` entry with ``statSourceId==1``,
+        ``statSplitTypeId==0`` and ``id == "10{season}"``), translated from ESPN
+        statIds into our canonical stat columns (so ``receiving_targets`` etc. are
+        available to the ScoringEngine), plus draft ranks + average draft position.
+
+        Columns: ``espn_id, player_id (gsis|None), name, position, team, adp,
+        auction_value, rank_ppr, rank_std`` and one column per canonical stat that
+        ESPN projects. Cached to ``espn_season_proj_{season}.parquet``. Returns a
+        typed empty frame if projections for ``season`` are not yet published.
+        """
+        path = app_settings.cache_dir / f"espn_season_proj_{self.season}.parquet"
+        # Preseason projections shift as sources update, so the cache has a TTL;
+        # a stale cache is still the fallback if the refetch fails or comes back
+        # empty (never cache an empty frame — it would mask later publication).
+        cache_fresh = (
+            path.exists()
+            and (time.time() - path.stat().st_mtime) < _SEASON_PROJ_TTL_SECONDS
+        )
+        if not refresh and cache_fresh:
+            return pd.read_parquet(path)
+
+        try:
+            raw = self._kona_players()
+        except Exception as e:  # noqa: BLE001 — stale cache beats no data
+            if path.exists():
+                log.warning("kona fetch failed (%s); serving stale cache.", e)
+                return pd.read_parquet(path)
+            raise
+        if not raw:
+            if path.exists():
+                log.info("kona returned no players; serving stale cache.")
+                return pd.read_parquet(path)
+            return self._empty_season_proj()
+
+        from fantasy.data.ids import crosswalk
+
+        xw = crosswalk()
+        proj_id = f"10{self.season}"
+        rows: list[dict] = []
+        projected = 0
+        for entry in raw:
+            p = entry.get("player") or {}
+            espn_id = p.get("id")
+            row: dict = {
+                "espn_id": None if espn_id is None else str(espn_id),
+                "player_id": xw.from_espn(espn_id) if espn_id is not None else None,
+                "name": p.get("fullName"),
+                "position": position_name(int(p.get("defaultPositionId", -1) or -1)),
+                "team": pro_team_abbr(p.get("proTeamId")),
+            }
+            own = p.get("ownership") or {}
+            row["adp"] = _f(own.get("averageDraftPosition"))
+            row["auction_value"] = _f(own.get("auctionValueAverage"))
+            ranks = p.get("draftRanksByRankType") or {}
+            row["rank_ppr"] = (ranks.get("PPR") or {}).get("rank")
+            row["rank_std"] = (ranks.get("STANDARD") or {}).get("rank")
+            # Season projection stat line.
+            stat_line = None
+            for s in p.get("stats") or []:
+                if (s.get("statSourceId") == 1 and s.get("statSplitTypeId") == 0
+                        and str(s.get("id")) == proj_id):
+                    stat_line = s.get("stats") or {}
+                    break
+            if stat_line:
+                projected += 1
+                for sid_str, value in stat_line.items():
+                    try:
+                        sid = int(sid_str)
+                    except (TypeError, ValueError):
+                        continue
+                    canonical = STATID_TO_CANONICAL.get(sid)
+                    if canonical is not None and value is not None:
+                        row[canonical] = row.get(canonical, 0.0) + float(value)
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        if projected == 0:
+            log.info("ESPN season projections for %s not published yet (id %s absent).",
+                     self.season, proj_id)
+        else:
+            log.info("ESPN season projections: %d/%d players carry a %s stat line.",
+                     projected, len(df), proj_id)
+        df.to_parquet(path, index=False)
+        return df
+
+    def _kona_players(self, limit: int = 1500) -> list[dict]:
+        """Fetch the raw kona_player_info list; empty on failure."""
+        filt = json.dumps({
+            "players": {
+                "limit": limit,
+                "sortDraftRanks": {"sortPriority": 100, "sortAsc": True, "value": "PPR"},
+            }
+        })
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/json",
+                   "X-Fantasy-Filter": filt}
+        base = f"{READS_BASE}/seasons/{self.season}"
+        # Prefer the real league (uses the league's own scoring for ranks); fall
+        # back to the league-free defaults so it works before cookies/league exist.
+        urls = [
+            f"{base}/segments/0/leagues/{self.league_id}?view=kona_player_info",
+            f"{base}/segments/0/leaguedefaults/3?view=kona_player_info",
+        ]
+        for url in urls:
+            try:
+                resp = requests.get(url, cookies=self.cookies, headers=headers, timeout=30)
+                resp.raise_for_status()
+                players = resp.json().get("players") or []
+                if players:
+                    return players
+            except Exception as e:  # noqa: BLE001
+                log.info("kona_player_info via %s failed: %s", url.split("/ffl")[-1][:50], e)
+        return []
+
+    @staticmethod
+    def _empty_season_proj() -> pd.DataFrame:
+        cols = ["espn_id", "player_id", "name", "position", "team", "adp",
+                "auction_value", "rank_ppr", "rank_std"]
+        return pd.DataFrame({c: pd.Series(dtype="object") for c in cols})

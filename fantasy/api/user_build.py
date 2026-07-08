@@ -17,6 +17,7 @@ from fantasy.db.models import League, User
 from fantasy.db.proposal_store import PgProposalStore
 from fantasy.db.repos import save_snapshot, set_league_name
 from fantasy.espn.credentials import build_client_for_user
+from fantasy.league_rules import effective_settings
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ def _pick_week(client, requested: int | None) -> int:
 def build_shell_for(db: Session, user: User, league: League, week: int | None = None) -> dict:
     """Instant shell (settings + standings + team), stored per-user."""
     client = build_client_for_user(db, user, league.espn_league_id, league.season)
-    ls = client.league_settings()
+    ls = effective_settings(db, league, client)
     set_league_name(db, league, getattr(ls, "name", "") or "")
     wk = _pick_week(client, week)
     payload = shell_snapshot(client, ls, league.season, wk, league.team_id)
@@ -42,7 +43,7 @@ def build_full_for(db: Session, user: User, league: League, week: int | None = N
     from fantasy.projections.service import ProjectionService, default_train_seasons
 
     client = build_client_for_user(db, user, league.espn_league_id, league.season)
-    ls = client.league_settings()
+    ls = effective_settings(db, league, client)
     set_league_name(db, league, getattr(ls, "name", "") or "")
     wk = _pick_week(client, week)
     log.info("Building full snapshot: user=%s espn_league=%s wk=%s",

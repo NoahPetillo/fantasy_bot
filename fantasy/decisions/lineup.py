@@ -15,9 +15,6 @@ import pulp
 from fantasy.espn.stat_ids import FLEX_ELIGIBILITY
 from fantasy.league_settings import LeagueSettings
 
-# Positions modeled for offense; K/DST handled as dedicated-only.
-_DEDICATED = {"QB", "RB", "WR", "TE", "K", "D/ST"}
-
 
 def _eligible(position: str, slot: str) -> bool:
     if slot in FLEX_ELIGIBILITY:
