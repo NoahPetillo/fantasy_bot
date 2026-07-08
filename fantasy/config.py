@@ -148,6 +148,16 @@ class Settings(BaseSettings):
     prioritize_trades: bool = Field(default=True, alias="PRIORITIZE_TRADES")
     data_dir: Path = Field(default=Path("./data"), alias="DATA_DIR")
 
+    # ── Memory-constrained hosting (e.g. Render's 512 MB starter instance) ──
+    # A projection build peaks ~635 MB on 5 seasons; float32 stats + fewer
+    # training seasons cut that to ~430 MB so it fits a 512 MB box. Off by
+    # default so local dev / backtests keep full float64 precision + history.
+    lean_memory: bool = Field(default=False, alias="LEAN_MEMORY")
+    # Seasons of history the projection model trains on. Recency decay (0.85^age)
+    # already down-weights old seasons, so trimming 5 -> 3 costs little accuracy
+    # but ~200 MB of peak. Override per-instance via TRAIN_SEASONS.
+    train_seasons: int = Field(default=5, alias="TRAIN_SEASONS")
+
     # ── Multi-tenant SaaS infrastructure (see MULTITENANT_BUILD.md) ──
     # Postgres (Neon) connection string. When unset, the app falls back to a
     # local SQLite file so dev/CI boot without a database — see

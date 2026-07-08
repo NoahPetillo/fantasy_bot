@@ -24,13 +24,18 @@ from fantasy.valuation.vor import compute_vor
 log = logging.getLogger(__name__)
 
 
-def default_train_seasons(target_season: int, n: int = 5) -> list[int]:
+def default_train_seasons(target_season: int, n: int | None = None) -> list[int]:
     """The last ``n`` completed seasons before ``target_season``.
 
     Callers pass the season being projected (e.g. 2026) and train on everything
     up to and including the season before it. Recency decay in the model keeps
-    the oldest seasons from dominating, so more history is strictly better.
+    the oldest seasons from dominating, so more history helps — but each extra
+    season adds real peak memory, so ``n`` defaults to ``settings.train_seasons``
+    (5 locally, trimmed to 3 on the memory-constrained Render box).
     """
+    if n is None:
+        from fantasy.config import settings
+        n = max(1, int(settings.train_seasons))
     return list(range(target_season - n, target_season))
 
 

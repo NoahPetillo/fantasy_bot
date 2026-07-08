@@ -9,6 +9,7 @@ hook. The Slack integration keeps the legacy global store (owner single-tenant).
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import threading
@@ -424,6 +425,7 @@ def _run_plan_build(user_id: str, league_id: str) -> None:
         _plan_status[league_id] = f"error: {e}"
     finally:
         db.close()
+        gc.collect()  # release the season board + weekly frames promptly
 
 
 @app.post("/api/leagues/{league_id}/draft-plan/build")
@@ -490,6 +492,9 @@ def _run_user_build(user_id: str, league_id: str, week: int | None) -> None:
         _build_status[league_id] = f"error: {e}"
     finally:
         db.close()
+        # Training holds large frames + XGBoost buffers; release them promptly so
+        # back-to-back builds on a small instance don't stack toward the OOM line.
+        gc.collect()
 
 
 @app.post("/api/leagues/{league_id}/build")

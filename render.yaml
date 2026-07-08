@@ -27,6 +27,16 @@ services:
         value: 0.0.0.0
       - key: DATA_DIR
         value: /data
+      # ── Fit the 512 MB starter instance ───────────────────────────────────
+      # A projection build peaks ~635 MB on 5 seasons of float64 data. Lean
+      # mode downcasts stats to float32 and trains on 3 seasons (recency decay
+      # makes the older two nearly free to drop), cutting the peak to ~430 MB.
+      # Remove these two (or raise the plan to "standard"/2 GB above) if you want
+      # the full-precision, 5-season model back.
+      - key: LEAN_MEMORY
+        value: "true"
+      - key: TRAIN_SEASONS
+        value: "3"
       # ── Multi-tenant SaaS (see MULTITENANT_BUILD.md) ──────────────────────
       # Neon Postgres connection string. All per-user state (users, encrypted
       # ESPN credentials, leagues, snapshots, proposals) lives here.

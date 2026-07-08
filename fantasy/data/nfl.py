@@ -103,6 +103,21 @@ def _normalize_weekly(df: pd.DataFrame) -> pd.DataFrame:
         df["def_tackles_total"] = df["def_tackles_solo"].fillna(0) + assists
     if "def_half_sacks" not in df.columns and "def_sacks" in df.columns:
         df["def_half_sacks"] = df["def_sacks"].fillna(0) * 2.0
+    # Lean mode: halve the numeric footprint of this frame (float64->float32,
+    # int64->int32). Fantasy stats need ~4 sig figs and scoring rounds to 2
+    # decimals, and XGBoost casts to float32 internally anyway, so precision is
+    # unaffected while a model build's peak RSS drops ~130 MB. Off by default.
+    if settings.lean_memory:
+        df = _downcast_numeric(df)
+    return df
+
+
+def _downcast_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Shrink float64->float32 and int64->int32 in place (memory-constrained hosts)."""
+    for col in df.select_dtypes(include=["float64"]).columns:
+        df[col] = df[col].astype("float32")
+    for col in df.select_dtypes(include=["int64"]).columns:
+        df[col] = df[col].astype("int32")
     return df
 
 

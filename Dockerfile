@@ -20,7 +20,17 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0 \
     HOST=0.0.0.0 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    # Keep RSS down on small instances: cap glibc malloc arenas (numpy/XGBoost
+    # spawn per-core threads that each grab an arena — huge RSS inflation on a
+    # box that reports many host cores but only gets ~0.5 CPU), trim freed heap
+    # back to the OS aggressively, and bound the BLAS/OpenMP thread pools.
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_TRIM_THRESHOLD_=100000 \
+    OMP_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    NUMEXPR_NUM_THREADS=2
 
 WORKDIR /app
 
