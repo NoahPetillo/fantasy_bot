@@ -36,7 +36,7 @@ services:
       - key: LEAN_MEMORY
         value: "true"
       - key: TRAIN_SEASONS
-        value: "3"
+        value: "2"
       # ── Multi-tenant SaaS (see MULTITENANT_BUILD.md) ──────────────────────
       # Neon Postgres connection string. All per-user state (users, encrypted
       # ESPN credentials, leagues, snapshots, proposals) lives here.

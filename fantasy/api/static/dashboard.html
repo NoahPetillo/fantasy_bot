@@ -583,7 +583,7 @@ async function renderDashboard(){
   const shellCTA=(isShell&&!building)?`<div class="empty" style="margin-top:14px;padding:22px">
       ${esc(t.status||"Full analysis not built yet.")}<br/><br/>
       <button onclick="buildLeague('${ACTIVE}')">Build analysis</button>
-      <div class="faint" style="margin-top:8px;font-size:12px">Trains the projection model on 5 seasons and generates lineup, waiver, and trade recommendations. Takes a few minutes.</div></div>`:"";
+      <div class="faint" style="margin-top:8px;font-size:12px">Trains the projection model on recent seasons and generates lineup, waiver, and trade recommendations from your current roster. Best once your league has drafted — before then, use the Draft plan below.</div></div>`:"";
 
   $("dash").innerHTML=`
     <div class="card" style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
