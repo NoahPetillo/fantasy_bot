@@ -262,6 +262,9 @@
       <label class="faint" style="font-size:12px" for="swid">SWID</label>
       <input id="swid" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" />
       <div class="hint" id="swidHint"></div>
+      <div class="consent"><input type="checkbox" id="rememberCookies" />
+        <label for="rememberCookies">Remember these cookies on this device<br/>
+          <span class="faint" style="font-size:11px">Prefills this form next time so you don't have to dig them out of DevTools again. Stored unencrypted in this browser only — leave off on shared computers. (The server keeps an encrypted copy either way.)</span></label></div>
       <div class="consent"><input type="checkbox" id="consent" />
         <label for="consent" id="consentLabel">I understand and consent.</label></div>
       <div class="acts" style="justify-content:flex-start">
@@ -847,9 +850,25 @@ async function refreshQuota(){
 // ── settings / connect ESPN ──
 async function openSettings(){
   $("settings").classList.add("show");
+  prefillCookies();
   try{ const c=await api("GET","/api/legal/espn-consent"); CONSENT_VERSION=c.version; renderConsent(c.markdown||""); }catch(_){}
   refreshEspnStatus();
   refreshBilling();
+}
+
+// ── "remember cookies on this device" (opt-in, localStorage, this browser only) ──
+const COOKIE_STORE_KEY = "espn_cookies_v1";
+function savedCookies(){ try{ return JSON.parse(localStorage.getItem(COOKIE_STORE_KEY)||"null"); }catch(_){ return null; } }
+function rememberCookies(s2,swid){ try{ localStorage.setItem(COOKIE_STORE_KEY, JSON.stringify({s2,swid})); }catch(_){} }
+function forgetCookies(){ try{ localStorage.removeItem(COOKIE_STORE_KEY); }catch(_){} const box=$("rememberCookies"); if(box) box.checked=false; }
+function prefillCookies(){
+  const saved = savedCookies();
+  const box = $("rememberCookies");
+  if(box) box.checked = !!saved;
+  if(saved && !$("s2").value && !$("swid").value){
+    $("s2").value = saved.s2 || ""; $("swid").value = saved.swid || "";
+    connectEnabled();
+  }
 }
 async function refreshBilling(){
   try{
@@ -890,7 +909,9 @@ function connectEnabled(){ validateCookieFields();
   $("connectBtn").disabled=!( $("consent").checked && $("s2").value.trim() && $("swid").value.trim() ); }
 async function doConnect(){
   const btn=$("connectBtn"); btn.classList.add("busy");
-  try{ const r=await api("POST","/api/espn/connect",{espn_s2:$("s2").value.trim(),swid:$("swid").value.trim(),consent:true,consent_version:CONSENT_VERSION});
+  const s2v=$("s2").value.trim(), swidv=$("swid").value.trim();
+  try{ const r=await api("POST","/api/espn/connect",{espn_s2:s2v,swid:swidv,consent:true,consent_version:CONSENT_VERSION});
+    if($("rememberCookies")&&$("rememberCookies").checked) rememberCookies(s2v,swidv); else forgetCookies();
     msg("espnMsg","ESPN connected — cookies encrypted and stored. Add your league from the sidebar.",true);
     $("s2").value="";$("swid").value=""; validateCookieFields(); refreshEspnStatus(); loadLeagues(); }
   catch(e){ msg("espnMsg",e.message+" — cookies expire when you log out of ESPN; re-copy them while logged in.",false); }
@@ -900,15 +921,22 @@ async function doTest(){ const b=$("testBtn"); b.classList.add("busy");
   try{ const r=await api("POST","/api/espn/test"); msg("espnMsg",r.valid?"Connection works.":(r.purged?"Cookies expired — removed. Re-copy them from espn.com while logged in.":"Cookies invalid — re-copy them from espn.com while logged in."),!!r.valid); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); }
   b.classList.remove("busy"); }
 async function doDisconnect(){
-  if(!await confirmDlg("Disconnect ESPN?","Removes your stored ESPN cookies. Your leagues stay, but builds and live data stop until you reconnect.","Disconnect")) return;
-  try{ await api("DELETE","/api/espn/credentials"); msg("espnMsg","Disconnected.",true); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); } }
+  if(!await confirmDlg("Disconnect ESPN?","Removes your stored ESPN cookies (including the copy remembered on this device, if any). Your leagues stay, but builds and live data stop until you reconnect.","Disconnect")) return;
+  try{ await api("DELETE","/api/espn/credentials"); forgetCookies(); msg("espnMsg","Disconnected.",true); refreshEspnStatus(); }catch(e){ msg("espnMsg",e.message,false); } }
 async function deleteAccount(){
   if(!await confirmDlg("Delete your account?","This permanently removes your account, ESPN credentials, all leagues, proposals, and chat history. It cannot be undone.","Delete everything")) return;
-  try{ await api("DELETE","/api/account"); if(CLERK) await CLERK.signOut(); location.reload(); }catch(e){ toast(e.message,true); } }
+  try{ await api("DELETE","/api/account"); forgetCookies(); if(CLERK) await CLERK.signOut(); location.reload(); }catch(e){ toast(e.message,true); } }
 
 function msg(id,text,ok){ const m=$(id); m.textContent=text; m.className="msg "+(ok?"ok":"err"); }
 document.addEventListener("input",(e)=>{ if(["consent","s2","swid"].includes(e.target.id)) connectEnabled(); });
-document.addEventListener("change",(e)=>{ if(e.target.id==="consent") connectEnabled(); });
+document.addEventListener("change",(e)=>{
+  if(e.target.id==="consent") connectEnabled();
+  if(e.target.id==="rememberCookies"){
+    if(!e.target.checked) forgetCookies();
+    else{ const s2v=$("s2").value.trim(), swidv=$("swid").value.trim();
+          if(s2v && swidv) rememberCookies(s2v,swidv); }
+  }
+});
 document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"){ closeSettings(); closeRules(); $("confirmOv").classList.remove("show"); } });
 
 // ── league rules (auto-detected ESPN settings + manual overrides) ──
