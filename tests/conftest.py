@@ -16,6 +16,9 @@ def _hermetic_web_settings(monkeypatch):
     for attr in ("clerk_publishable_key", "clerk_secret_key", "clerk_issuer", "clerk_jwks_url",
                  "stripe_secret_key", "stripe_webhook_secret", "stripe_price_id"):
         monkeypatch.setattr(settings, attr, None)
+    # Builds must run in-process under tests: a spawned subprocess wouldn't see the
+    # monkeypatched build functions or the per-test SQLite DB.
+    monkeypatch.setattr(settings, "build_subprocess", False)
     # Fresh chat limiter per test so a tiny per-test limit can't leak across tests.
     api._chat_limiter = None
     yield

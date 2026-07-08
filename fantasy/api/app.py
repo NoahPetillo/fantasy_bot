@@ -12,6 +12,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import multiprocessing
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -69,6 +70,85 @@ _store: Store | None = None
 _build_status: dict[str, str] = {}
 # league uuid (str) -> "building" | "done" | "error: ..." (draft-plan build thread)
 _plan_status: dict[str, str] = {}
+
+
+# ── isolated build execution ──────────────────────────────────────────────────
+# Heavy builds (model training, season board) can peak past a small instance's
+# memory limit. Running them in a spawned subprocess means an OOM kill hits only
+# that child — the web server survives and reports the failure instead of the
+# whole container dying (a site-wide 502). The worker writes its terminal status
+# to a small file; a supervisor thread translates that (or the child's exit code,
+# for an OOM/crash that never got to write) back into the in-memory status dict
+# the GET endpoints poll. Under tests ``build_subprocess`` is off, so the worker
+# runs in a thread in-process (monkeypatches + the shared test DB still apply).
+_OOM_STATUS = (
+    "error: this build ran out of memory on the current instance — use the "
+    "Draft plan (much lighter) or move to a larger instance"
+)
+
+
+def _status_file(kind: str, key: str) -> Path:
+    d = settings.data_dir / ".build_status"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{kind}-{key}"
+
+
+def write_build_status(status_path: str | None, text: str) -> None:
+    """Worker-side: record the terminal status where the supervisor can read it."""
+    if not status_path:
+        return
+    try:
+        Path(status_path).write_text(text, encoding="utf-8")
+    except OSError:
+        log.warning("could not write build status file %s", status_path)
+
+
+def _read_status_file(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip() or None
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _launch_build(kind: str, key: str, target, args: tuple, status: dict[str, str]) -> None:
+    """Start ``target(*args, status_path)`` in a subprocess (prod) or thread (tests)
+    and keep ``status[key]`` current for the polling GET endpoints."""
+    status[key] = "building"
+    path = _status_file(kind, key)
+    path.unlink(missing_ok=True)
+
+    if settings.build_subprocess:
+        ctx = multiprocessing.get_context("spawn")
+        proc = ctx.Process(target=target, args=(*args, str(path)), daemon=True)
+        proc.start()
+        threading.Thread(target=_supervise_process, args=(proc, key, status, path),
+                         daemon=True).start()
+    else:
+        def _run_in_thread() -> None:
+            try:
+                target(*args, str(path))
+            finally:
+                status[key] = _read_status_file(path) or "error: build did not report a status"
+                path.unlink(missing_ok=True)
+        threading.Thread(target=_run_in_thread, daemon=True).start()
+
+
+def _supervise_process(proc, key: str, status: dict[str, str], path: Path) -> None:
+    """Wait for a build subprocess and reflect its outcome into ``status[key]``.
+
+    A missing status file means the child died before it could write one — almost
+    always the OS OOM-killer (negative exit code from SIGKILL), so report that
+    clearly rather than leaving the build stuck on "building" forever."""
+    proc.join()
+    text = _read_status_file(path)
+    if text is None:
+        code = proc.exitcode
+        status[key] = _OOM_STATUS if (code is None or code < 0) else \
+            f"error: build process exited unexpectedly (code {code})"
+        log.warning("build for %s produced no status (exit code %s)", key, code)
+    else:
+        status[key] = text
+    path.unlink(missing_ok=True)
 
 
 @app.get("/api/config")
@@ -389,21 +469,24 @@ def api_refetch_rules(league_id: str, user: User = Depends(get_current_user),
 
 
 # ── draft plan (season-level strategy; on-demand background build) ─────────────
-def _run_plan_build(user_id: str, league_id: str) -> None:
-    """Background draft-plan build in its own DB session (threads can't share one).
+def _run_plan_build(user_id: str, league_id: str, status_path: str | None = None) -> None:
+    """Background draft-plan build in its own DB session (a spawned subprocess or,
+    under tests, a thread — either way its own session).
 
     The plan is season-level and must build even without ESPN cookies, so it uses
     the merged stored/override settings (``client`` best-effort only). Persists to
-    ``League.draft_plan`` / ``draft_plan_built_at``."""
+    ``League.draft_plan`` / ``draft_plan_built_at`` and writes its terminal status
+    to ``status_path`` for the supervisor."""
     from fantasy.draft.plan import build_draft_plan
     from fantasy.draft.season_board import build_season_board
 
+    status = "done"
     db = get_sessionmaker()()
     try:
         user = db.get(User, uuid.UUID(user_id))
         lg = db.get(League, uuid.UUID(league_id))
         if user is None or lg is None or lg.user_id != user.id:
-            _plan_status[league_id] = "error: not found"
+            status = "error: not found"
             return
         # Best-effort ESPN client to refresh detected settings; None is fine — the
         # plan builds off stored/override settings when cookies aren't connected.
@@ -418,14 +501,14 @@ def _run_plan_build(user_id: str, league_id: str) -> None:
         lg.draft_plan = plan
         lg.draft_plan_built_at = datetime.now(timezone.utc)
         db.commit()
-        _plan_status[league_id] = "done"
     except Exception as e:  # noqa: BLE001
         log.exception("draft-plan build failed for league %s", league_id)
         db.rollback()
-        _plan_status[league_id] = f"error: {e}"
+        status = f"error: {e}"
     finally:
         db.close()
         gc.collect()  # release the season board + weekly frames promptly
+        write_build_status(status_path, status)
 
 
 @app.post("/api/leagues/{league_id}/draft-plan/build")
@@ -437,8 +520,7 @@ def api_build_draft_plan(league_id: str, user: User = Depends(get_current_user),
     key = str(lg.id)
     if _plan_status.get(key) == "building":
         return {"ok": True, "status": "building", "note": "already in progress"}
-    _plan_status[key] = "building"
-    threading.Thread(target=_run_plan_build, args=(str(user.id), key), daemon=True).start()
+    _launch_build("plan", key, _run_plan_build, (str(user.id), key), _plan_status)
     return {"ok": True, "status": "building"}
 
 
@@ -474,27 +556,30 @@ def api_get_draft_plan(league_id: str, user: User = Depends(get_current_user),
     }
 
 
-def _run_user_build(user_id: str, league_id: str, week: int | None) -> None:
-    """Background full build in its own DB session (threads can't share one)."""
+def _run_user_build(user_id: str, league_id: str, week: int | None,
+                    status_path: str | None = None) -> None:
+    """Background full build in its own DB session (a spawned subprocess in prod,
+    a thread under tests). Writes its terminal status to ``status_path``."""
+    status = "done"
     db = get_sessionmaker()()
     try:
         user = db.get(User, uuid.UUID(user_id))
         lg = db.get(League, uuid.UUID(league_id))
         if user is None or lg is None or lg.user_id != user.id:
-            _build_status[league_id] = "error: not found"
+            status = "error: not found"
             return
         build_full_for(db, user, lg, week=week)
-        _build_status[league_id] = "done"
     except EspnAuthError:
-        _build_status[league_id] = "error: connect ESPN"
+        status = "error: connect ESPN"
     except Exception as e:  # noqa: BLE001
         log.exception("user build failed for league %s", league_id)
-        _build_status[league_id] = f"error: {e}"
+        status = f"error: {e}"
     finally:
         db.close()
         # Training holds large frames + XGBoost buffers; release them promptly so
         # back-to-back builds on a small instance don't stack toward the OOM line.
         gc.collect()
+        write_build_status(status_path, status)
 
 
 @app.post("/api/leagues/{league_id}/build")
@@ -507,8 +592,7 @@ def api_build_league(league_id: str, week: int | None = None,
     key = str(lg.id)
     if _build_status.get(key) == "building":
         return {"ok": True, "status": "building", "note": "already in progress"}
-    _build_status[key] = "building"
-    threading.Thread(target=_run_user_build, args=(str(user.id), key, week), daemon=True).start()
+    _launch_build("full", key, _run_user_build, (str(user.id), key, week), _build_status)
     return {"ok": True, "status": "building"}
 
 

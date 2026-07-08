@@ -157,6 +157,11 @@ class Settings(BaseSettings):
     # already down-weights old seasons, so trimming 5 -> 3 costs little accuracy
     # but ~200 MB of peak. Override per-instance via TRAIN_SEASONS.
     train_seasons: int = Field(default=5, alias="TRAIN_SEASONS")
+    # Run heavy builds (model training, season board) in an isolated subprocess so
+    # an out-of-memory kill takes down only that build, never the web server. On
+    # by default; tests force it off so in-process monkeypatches + the shared test
+    # DB keep working.
+    build_subprocess: bool = Field(default=True, alias="BUILD_SUBPROCESS")
 
     # ── Multi-tenant SaaS infrastructure (see MULTITENANT_BUILD.md) ──
     # Postgres (Neon) connection string. When unset, the app falls back to a
