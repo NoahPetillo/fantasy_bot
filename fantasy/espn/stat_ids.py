@@ -47,9 +47,13 @@ SLOT_IDS: dict[int, str] = {
 # Slots that hold a starter and therefore count toward replacement-level math.
 STARTER_SLOTS: set[str] = {
     "QB", "TQB", "RB", "RB/WR", "WR", "WR/TE", "TE", "OP", "FLEX",
-    "DT", "DE", "LB", "DL", "CB", "S", "DB", "DP", "D/ST", "K", "ER",
+    "DT", "DE", "LB", "DL", "CB", "S", "DB", "DP", "D/ST", "K", "P", "HC", "ER",
 }
 NON_STARTER_SLOTS: set[str] = {"BE", "IR"}
+
+# Individual-defensive-player positions (players) and the slots that seat them.
+IDP_POSITIONS: set[str] = {"DT", "DE", "LB", "DL", "CB", "S", "DB", "ER"}
+IDP_SLOTS: set[str] = {"DT", "DE", "LB", "DL", "CB", "S", "DB", "DP", "ER"}
 
 # Which player positions are eligible for each flex-style slot (for VOR / lineup LP).
 FLEX_ELIGIBILITY: dict[str, set[str]] = {
@@ -57,7 +61,31 @@ FLEX_ELIGIBILITY: dict[str, set[str]] = {
     "RB/WR": {"RB", "WR"},
     "WR/TE": {"WR", "TE"},
     "OP": {"QB", "RB", "WR", "TE"},  # superflex
+    "DP": IDP_POSITIONS,  # any defensive player
+    "DL": {"DT", "DE"},
+    "DB": {"CB", "S"},
 }
+
+# ── Pro-team IDs (proTeamId) → NFL abbreviation ───────────────────────────────
+# ESPN's stable numeric team ids (id 0 = free agent / no team). Abbreviations use
+# the nflverse conventions (WAS/LAR/LAC/JAX) so team strings join to other sources.
+PRO_TEAM_ABBR: dict[int, str] = {
+    0: "FA",
+    1: "ATL", 2: "BUF", 3: "CHI", 4: "CIN", 5: "CLE", 6: "DAL", 7: "DEN",
+    8: "DET", 9: "GB", 10: "TEN", 11: "IND", 12: "KC", 13: "LV", 14: "LAR",
+    15: "MIA", 16: "MIN", 17: "NE", 18: "NO", 19: "NYG", 20: "NYJ", 21: "PHI",
+    22: "ARI", 23: "PIT", 24: "LAC", 25: "SF", 26: "SEA", 27: "TB", 28: "WAS",
+    29: "CAR", 30: "JAX", 33: "BAL", 34: "HOU",
+}
+
+
+def pro_team_abbr(team_id: int | None) -> str | None:
+    """Map an ESPN proTeamId to an NFL abbreviation (None if unknown / free agent)."""
+    if team_id is None:
+        return None
+    abbr = PRO_TEAM_ABBR.get(int(team_id))
+    return abbr if abbr and abbr != "FA" else None
+
 
 # ── Player position IDs (defaultPositionId) ───────────────────────────────────
 POSITION_IDS: dict[int, str] = {
@@ -66,6 +94,8 @@ POSITION_IDS: dict[int, str] = {
     3: "WR",
     4: "TE",
     5: "K",
+    7: "P",
+    14: "HC",  # head coach (community-mapped; verify vs real league, log unknowns)
     16: "D/ST",
     # IDP
     9: "DT", 10: "DE", 11: "LB", 12: "CB", 13: "S",
@@ -122,6 +152,33 @@ STATID_TO_CANONICAL: dict[int, str] = {
     103: "interception_return_tds",
     104: "fumble_return_tds",
     105: "dst_touchdowns",
+    # Individual return yardage (returner-scored leagues)
+    114: "kickoff_return_yards",
+    115: "punt_return_yards",
+    # IDP (individual defensive players; 95-99 above double as the IDP rules —
+    # ESPN reuses those statIds for both D/ST units and defensive players)
+    100: "def_half_sacks",
+    106: "def_fumbles_forced",
+    107: "def_tackle_assists",
+    108: "def_tackles_solo",
+    109: "def_tackles_total",
+    112: "def_tackles_for_loss",
+    113: "def_passes_defended",
+    # Head Coach (team-result scoring; 158-174 margin variants are logged, not modeled)
+    155: "hc_team_win",
+    156: "hc_team_loss",
+    157: "hc_team_tie",
+}
+
+# ESPN "every N units" scoring variants, normalized to per-unit at parse time
+# (e.g. statId 116 "kickoff return yards per 10" -> kickoff_return_yards @ pts/10).
+PER_N_STATIDS: dict[int, tuple[str, int]] = {
+    110: ("def_tackles_total", 3),
+    111: ("def_tackles_total", 5),
+    116: ("kickoff_return_yards", 10),
+    117: ("kickoff_return_yards", 25),
+    118: ("punt_return_yards", 10),
+    119: ("punt_return_yards", 25),
 }
 
 # ── Canonical stat name → nflverse weekly column (for backtest/training) ───────
@@ -149,6 +206,23 @@ CANONICAL_TO_NFLVERSE: dict[str, str] = {
     "receiving_first_downs": "receiving_first_downs",
     "fumbles_lost": "fumbles_lost",  # synthesized = sack+rushing+receiving fumbles lost
     "special_teams_tds": "special_teams_tds",
+    # Individual returns (columns exist in nflverse player stats)
+    "kickoff_return_yards": "kickoff_return_yards",
+    "punt_return_yards": "punt_return_yards",
+    # IDP — def_* columns cover defensive players in the same weekly frame;
+    # def_tackles_total / def_half_sacks are synthesized in the loader.
+    "def_tackles_solo": "def_tackles_solo",
+    "def_tackle_assists": "def_tackle_assists",
+    "def_tackles_total": "def_tackles_total",
+    "def_half_sacks": "def_half_sacks",
+    "def_tackles_for_loss": "def_tackles_for_loss",
+    "def_passes_defended": "def_pass_defended",
+    "def_fumbles_forced": "def_fumbles_forced",
+    "dst_sacks": "def_sacks",
+    "dst_interceptions": "def_interceptions",
+    "dst_safeties": "def_safeties",
+    "dst_fumbles_recovered": "fumble_recovery_opp",
+    "dst_touchdowns": "def_tds",
 }
 
 

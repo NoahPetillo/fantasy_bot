@@ -100,6 +100,20 @@ class League(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    # Persisted league rules (see fantasy/league_rules.py). `settings_detected` is
+    # the last ESPN mSettings parse (a LeagueSettings dump); `settings_overrides`
+    # is the user's manual-entry layer (needed pre-season, before ESPN rules are
+    # final, and as a permanent hedge against ids the auto-detector misses).
+    # Merge order is detected < overrides, computed on read — never stored merged.
+    settings_detected: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    settings_overrides: Mapped[dict] = mapped_column(JSONColumn, nullable=False, default=dict)
+    settings_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Cached Draft Plan output (fantasy/draft/plan.py, Phase 5) + a staleness
+    # marker cleared whenever rules change so the UI knows to prompt a rebuild.
+    draft_plan: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    draft_plan_built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     user: Mapped[User] = relationship(back_populates="leagues")
     snapshots: Mapped[list[Snapshot]] = relationship(
         back_populates="league", cascade="all, delete-orphan"

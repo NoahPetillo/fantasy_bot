@@ -86,6 +86,13 @@
   .sec{margin:20px 0}
   .sec h2{font-size:14px;font-weight:600;margin:0 0 10px;color:var(--muted);display:flex;align-items:baseline;gap:8px}
   .sec h2 .n{color:var(--faint);font-weight:400;font-size:12px}
+  .sec .sec{margin:14px 0}
+  h3.dph3{font-size:12px;font-weight:600;margin:0 0 8px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+  .busytxt{color:var(--amber)}
+  .busytxt::after{content:"";display:inline-block;width:12px;height:12px;margin-left:8px;vertical-align:-1px;
+    border:2px solid var(--line-strong);border-top-color:var(--amber);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media(max-width:560px){h3.dph3{letter-spacing:0}}
   .row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;
     border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:var(--panel)}
   .row .meta{color:var(--faint);font-size:12px;margin-top:2px}
@@ -131,10 +138,34 @@
   .overlay.show{display:flex}
   .modal{max-width:600px;width:100%;z-index:var(--z-modal)}
   .modal-s{max-width:420px}
+  .modal-l{max-width:760px}
 
   .msg{margin-top:10px;padding:10px 12px;border-radius:var(--radius-s);font-size:13px;display:none}
   .msg.ok{display:block;background:rgba(34,197,94,.12);border:1px solid var(--green)}
   .msg.err{display:block;background:rgba(239,68,68,.12);border:1px solid #f4b0a8;color:#f4c2bd}
+
+  /* League rules modal */
+  .rules-grp{border:1px solid var(--line);border-radius:var(--radius-s);margin-bottom:10px;overflow:hidden}
+  .rules-grp summary{cursor:pointer;padding:10px 12px;font-weight:600;font-size:13px;
+    background:var(--panel2);list-style:none;display:flex;justify-content:space-between;align-items:center}
+  .rules-grp summary::-webkit-details-marker{display:none}
+  .rules-grp summary::after{content:"›";transform:rotate(90deg);color:var(--faint);font-size:16px;transition:transform var(--speed) var(--ease)}
+  .rules-grp[open] summary::after{transform:rotate(-90deg)}
+  .rules-grp .body{padding:8px 12px 4px}
+  .rules-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;
+    border-bottom:1px solid var(--line)}
+  .rules-row:last-child{border-bottom:0}
+  .rules-row label{font-size:13px;flex:1;min-width:0}
+  .rules-row .rf-input-wrap{display:flex;align-items:center;gap:8px;flex:none}
+  .rules-row input{width:88px;min-height:36px;text-align:right}
+  @media(pointer:coarse){.rules-row input{min-height:44px}}
+  .diffpill{font-size:10px;color:var(--faint);white-space:nowrap}
+  .rules-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  @media(max-width:560px){.rules-slots{grid-template-columns:repeat(2,1fr)}}
+  .rules-slot label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}
+  .rules-slot input{width:100%;min-height:38px;text-align:center}
+  @media(pointer:coarse){.rules-slot input{min-height:44px}}
+  .rules-teamcount{max-width:120px}
 
   .consent{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
   .consent input{width:17px;height:17px;flex:none;margin-top:3px}
@@ -270,6 +301,29 @@
   </div>
 </div>
 
+<!-- League rules modal -->
+<div class="overlay" id="rulesOv">
+  <div class="modal modal-l card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:18px">League rules <small class="faint" id="rulesLeagueName" style="font-weight:400;font-size:13px"></small></h2>
+      <button class="ghost" onclick="closeRules()">Close</button>
+    </div>
+    <div class="faint" style="font-size:12px;margin:6px 0 12px">
+      Auto-detected from ESPN, plus anything you set by hand below (useful before your league's rules
+      are finalized on ESPN, or for rules ESPN doesn't expose). Your entry always wins.
+    </div>
+    <div id="rulesBody"><div class="muted">Loading…</div></div>
+    <div class="msg" id="rulesMsg"></div>
+    <div class="acts" style="margin-top:14px;justify-content:space-between">
+      <button class="ghost" id="rulesRefetchBtn" onclick="refetchRules()">Refetch from ESPN</button>
+      <div class="acts">
+        <button class="ghost" onclick="closeRules()">Cancel</button>
+        <button id="rulesSaveBtn" onclick="saveRules()">Save rules</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -279,6 +333,7 @@ let CLERK = null, CONSENT_VERSION = null, LEAGUES = [], ACTIVE = null, PLAN = nu
 let TRADE = null, TA_GIVE = [], TA_GET = [], TA_LEAGUE = null, TA_QUERY = {give: "", get: ""};
 let TA_ACTIVE = {give: -1, get: -1}, TA_ITEMS = {give: [], get: []};
 let BUILD_POLL = null;
+let DPLAN = null, DPLAN_LEAGUE = null, DPLAN_POLL = null;
 const taNorm = (s) => String(s||"").toLowerCase().replace(/[.'-]/g," ").replace(/\s+/g," ").trim();
 
 // ── toast + custom confirm (replaces alert/confirm) ──
@@ -532,9 +587,13 @@ async function renderDashboard(){
       <div><div style="font-size:18px;font-weight:700">${esc(t.name||'')}</div>
       <div class="muted">${esc(t.league||'')} · week ${esc(t.week||'—')}</div>
       ${building?'<div style="color:var(--amber);font-size:13px;margin-top:4px">Building full analysis… this page updates automatically.</div>':''}</div>
-      <span class="updated" title="When this analysis was generated">${d.generated_at?`Updated ${ago(d.generated_at)}`:""}</span></div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="ghost" onclick="openRules()">League rules</button>
+        <span class="updated" title="When this analysis was generated">${d.generated_at?`Updated ${ago(d.generated_at)}`:""}</span>
+      </div></div>
     ${shellCTA}
     <div class="kpis" style="margin-top:14px">${kpis}</div>
+    <div class="sec" id="draftPlanSec"><h2>Draft plan</h2><div id="draftPlanBody"><div class="empty">Loading…</div></div></div>
     <div class="sec"><h2>Optimal lineup ${d.lineup_total?`<span class="n">${esc(d.lineup_total)} projected pts</span>`:""}</h2>
       ${lineup?`<div class="tblwrap"><table><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num">Proj</th><th class="num">Range</th></tr>${lineup}</table></div>`
         :`<div class="empty">${isShell?"Build the analysis to see your optimal lineup.":"No lineup to optimize yet — check back once rosters are set."}</div>`}</div>
@@ -556,6 +615,110 @@ async function renderDashboard(){
     ${feed?`<div class="sec"><h2>News &amp; alerts</h2>${feed}</div>`:''}
     ${standings?`<div class="sec"><h2>Standings</h2><div class="tblwrap"><table><tr><th>#</th><th>Team</th><th class="num">W-L</th><th class="num">PF</th></tr>${standings}</table></div>`:''}`;
   initTradeAnalyzer();
+  loadDraftPlan();
+}
+// ── draft plan ──
+async function loadDraftPlan(){
+  const body=$("draftPlanBody"); if(!body) return;
+  if(DPLAN_LEAGUE!==ACTIVE){ DPLAN=null; DPLAN_LEAGUE=ACTIVE; if(DPLAN_POLL){clearInterval(DPLAN_POLL);DPLAN_POLL=null;} }
+  let d; try{ d=await api("GET",`/api/leagues/${ACTIVE}/draft-plan`); }
+  catch(e){ body.innerHTML=`<div class="empty">${esc(e.message)}</div>`; return; }
+  DPLAN=d;
+  renderDraftPlan();
+  if(d.status==="building" && !DPLAN_POLL){
+    DPLAN_POLL=setInterval(async()=>{
+      let p; try{ p=await api("GET",`/api/leagues/${ACTIVE}/draft-plan`); }catch(e){ return; }
+      const wasBuilding=DPLAN&&DPLAN.status==="building"; DPLAN=p; renderDraftPlan();
+      if(p.status!=="building"){ clearInterval(DPLAN_POLL); DPLAN_POLL=null;
+        if(wasBuilding && p.status==="done") toast("Draft plan ready."); }
+    }, 2500);
+  }
+}
+async function buildDraftPlan(){
+  try{ await api("POST",`/api/leagues/${ACTIVE}/draft-plan/build`);
+    if(!DPLAN) DPLAN={}; DPLAN.status="building";
+    toast("Building your draft plan — value board + strategy take a minute.");
+    renderDraftPlan(); loadDraftPlan();
+  }catch(e){ toast(e.message,true); }
+}
+function renderDraftPlan(){
+  const body=$("draftPlanBody"); if(!body || !DPLAN) return;
+  const st=DPLAN.status;
+  if(st==="none"){
+    body.innerHTML=`<div class="empty" style="padding:20px">
+      No draft plan yet — a round-by-round positional strategy under your exact league rules.<br/><br/>
+      <button onclick="buildDraftPlan()">Build draft plan</button>
+      <div class="faint" style="margin-top:8px;font-size:12px">Scores a full value board under your scoring (targets, return yards, IDP, HC) and derives per-round priorities. Rebuild anytime after a rules change.</div></div>`;
+    return;
+  }
+  if(st==="building"){
+    body.innerHTML=`<div class="empty" style="padding:20px"><span class="busytxt">Building your draft plan…</span>
+      <div class="faint" style="margin-top:6px;font-size:12px">Assembling the value board and computing round priorities. This page updates automatically.</div></div>`;
+    return;
+  }
+  if(st && st.indexOf("error")===0){
+    body.innerHTML=`<div class="empty" style="padding:18px">Couldn't build the plan: ${esc(st.replace(/^error:\s*/,""))}<br/><br/>
+      <button class="ghost" onclick="buildDraftPlan()">Try again</button></div>`;
+    return;
+  }
+  const p=DPLAN.plan; if(!p){ body.innerHTML=`<div class="empty">No plan data.</div>`; return; }
+
+  const staleBar=DPLAN.stale?`<div class="row" style="border-color:var(--amber);background:rgba(245,158,11,.08)">
+      <div><span class="pill" style="color:var(--amber);border-color:var(--amber)">stale</span>
+      Your rules changed since this plan was built.</div>
+      <button class="ghost" onclick="buildDraftPlan()">Rebuild</button></div>`:"";
+
+  const summary=p.league_summary?`<div class="row"><div>${esc(p.league_summary)}</div></div>`:"";
+
+  const impact=(p.rules_impact||[]).map(r=>`<div class="row"><div>
+      <div><strong>${esc(r.headline)}</strong></div>
+      <div class="meta">${esc(r.detail)}</div></div>
+      <div class="val" style="color:var(--green)">${r.magnitude_pts>=0?'+':''}${esc(r.magnitude_pts)} pts</div></div>`).join("");
+
+  const pv=(p.positional_value||[]).map(v=>`<tr>
+      <td><strong>${esc(v.position)}</strong></td>
+      <td class="num faint">${esc(v.starters_league_wide)}</td>
+      <td class="num">${esc(v.replacement_pts)}</td>
+      <td class="num">${esc(v.top3_avg_pts)}</td>
+      <td class="num">${esc(v.dropoff_pts)}</td>
+      <td class="faint">${esc(v.tier_note)}</td></tr>`).join("");
+  const pvTable=pv?`<div class="tblwrap"><table><tr>
+      <th>Pos</th><th class="num">Starters</th><th class="num">Repl pts</th>
+      <th class="num">Top-3 avg</th><th class="num">Dropoff</th><th>Tier</th></tr>${pv}</table></div>`:"";
+
+  const rp=(p.round_plan||[]).map(r=>{
+    const pills=(r.priorities||[]).map(x=>`<span class="pill">${esc(x.position)}</span>`).join(" ");
+    const reasons=(r.priorities||[]).map(x=>esc(x.reason)).join(" · ");
+    const avoid=(r.avoid||[]).length?`<span class="faint"> · avoid ${(r.avoid).map(esc).join(", ")}</span>`:"";
+    const meta=[reasons,r.note?esc(r.note):""].filter(Boolean).join(" — ");
+    return `<tr><td class="faint">${esc(r.round)}</td><td class="num faint">${esc(r.pick_overall)}</td>
+      <td>${pills||'<span class="faint">BPA</span>'}${avoid}${meta?`<div class="meta">${meta}</div>`:""}</td></tr>`;}).join("");
+  const rpTable=rp?`<div class="tblwrap"><table><tr><th>Rd</th><th class="num">Pick</th><th>Priorities &amp; why</th></tr>${rp}</table></div>`:"";
+
+  const VERD={draft_hold:"draft &amp; hold",stream_weekly:"stream weekly",late_hold:"late hold",
+    set_and_forget:"set &amp; forget",draft_and_hold:"draft &amp; hold"};
+  const streams=(p.streamability||[]).map(s=>`<span class="pill" title="${esc(s.ev_note)}">${esc(s.slot)}: ${VERD[s.verdict]||esc(s.verdict)}</span>`).join(" ");
+  const streamNotes=(p.streamability||[]).map(s=>`<div class="meta">· <strong>${esc(s.slot)}</strong> — ${esc(s.ev_note)}</div>`).join("");
+
+  const rw=p.returner_watch;
+  const rwPlayers=rw&&rw.players&&rw.players.length?`<div class="tblwrap"><table style="margin-top:6px"><tr>
+      <th>Player</th><th>Pos</th><th>Team</th><th>Role</th><th class="num">Return pts</th></tr>
+      ${rw.players.map(x=>`<tr><td>${esc(x.name)}</td><td class="faint">${esc(x.position)}</td>
+      <td class="faint">${esc(x.team||'')}</td><td class="faint">${esc(x.role)}</td>
+      <td class="num">${esc(x.return_pts)}</td></tr>`).join("")}</table></div>`:"";
+  const rwBlock=rw?`<div class="sec"><h3 class="dph3">Returner watch</h3>
+      <div class="row"><div>${esc(rw.note)}</div></div>${rwPlayers}</div>`:"";
+
+  body.innerHTML=`
+    ${staleBar}
+    ${summary}
+    ${impact?`<div class="sec"><h3 class="dph3">How your rules bend value</h3>${impact}</div>`:""}
+    ${pvTable?`<div class="sec"><h3 class="dph3">Value by position</h3>${pvTable}</div>`:""}
+    ${rpTable?`<div class="sec"><h3 class="dph3">Round-by-round</h3>${rpTable}</div>`:""}
+    ${streams?`<div class="sec"><h3 class="dph3">Streamability</h3><div class="starters" style="margin-bottom:6px">${streams}</div>${streamNotes}</div>`:""}
+    ${rwBlock}
+    <div class="faint" style="font-size:11px;margin-top:4px">${DPLAN.built_at?`Plan built ${ago(new Date(DPLAN.built_at).getTime()/1000)}`:""}
+      · <a href="#" onclick="buildDraftPlan();return false">rebuild</a></div>`;
 }
 async function decide(btn,id,action){
   const wrap=btn.closest(".acts"); const btns=wrap?[...wrap.querySelectorAll("button")]:[btn];
@@ -746,7 +909,141 @@ async function deleteAccount(){
 function msg(id,text,ok){ const m=$(id); m.textContent=text; m.className="msg "+(ok?"ok":"err"); }
 document.addEventListener("input",(e)=>{ if(["consent","s2","swid"].includes(e.target.id)) connectEnabled(); });
 document.addEventListener("change",(e)=>{ if(e.target.id==="consent") connectEnabled(); });
-document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"){ closeSettings(); $("confirmOv").classList.remove("show"); } });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape"){ closeSettings(); closeRules(); $("confirmOv").classList.remove("show"); } });
+
+// ── league rules (auto-detected ESPN settings + manual overrides) ──
+let RULES = null;               // last GET /rules payload for ACTIVE
+const RULES_GROUP_LABEL = {
+  passing:"Passing", rushing:"Rushing", receiving:"Receiving", returns:"Returns (KR/PR)",
+  idp:"IDP (individual defense)", hc:"Head coach", kicking:"Kicking", misc:"Misc",
+};
+function rulesFieldId(key){ return `rf-${key}`; }
+function rulesSlotId(slot){ return `rs-${slot.replace(/[^A-Za-z0-9]/g,"_")}`; }
+function rulesDiffFor(path){ return (RULES.diff||[]).find(d=>d.path===path); }
+function rulesDetected(path){
+  const parts=path.split("."); let cur=RULES.detected;
+  for(const p of parts){ if(!cur||typeof cur!=="object") return undefined; cur=cur[p]; }
+  return cur;
+}
+function rulesPill(path, curVal){
+  const det = rulesDetected(path);
+  if(det===undefined || det===null) return "";
+  if(Number(det)===Number(curVal)) return "";
+  return `<span class="diffpill">ESPN: ${esc(det)}</span>`;
+}
+async function openRules(){
+  if(!ACTIVE) return;
+  $("rulesOv").classList.add("show");
+  $("rulesLeagueName").textContent = "— "+((LEAGUES.find(l=>l.league_id===ACTIVE)||{}).name||"");
+  $("rulesBody").innerHTML = `<div class="muted">Loading…</div>`;
+  $("rulesMsg").className = "msg";
+  try{
+    RULES = await api("GET",`/api/leagues/${ACTIVE}/rules`);
+    renderRulesForm();
+  }catch(e){
+    $("rulesBody").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+function closeRules(){ $("rulesOv").classList.remove("show"); }
+function renderRulesForm(){
+  const catalog = RULES.catalog || {scoring:[], roster_slots:[]};
+  const scoring = (RULES.merged && RULES.merged.scoring) || {};
+  const slots = (RULES.merged && RULES.merged.roster && RULES.merged.roster.slots) || {};
+  const teamCount = (RULES.merged && RULES.merged.team_count) || 12;
+
+  const groups = {};
+  for(const item of catalog.scoring){ (groups[item.group]=groups[item.group]||[]).push(item); }
+
+  const groupHtml = Object.keys(groups).map(g=>{
+    const rows = groups[g].map(item=>{
+      const val = scoring[item.key] ?? item.default;
+      return `<div class="rules-row">
+        <label for="${rulesFieldId(item.key)}">${esc(item.label)}</label>
+        <div class="rf-input-wrap">${rulesPill(`scoring.${item.key}`, val)}
+          <input type="number" step="0.05" id="${rulesFieldId(item.key)}" data-scoring-key="${esc(item.key)}" value="${esc(val)}" /></div>
+      </div>`;}).join("");
+    return `<details class="rules-grp"><summary>${esc(RULES_GROUP_LABEL[g]||g)}</summary><div class="body">${rows}</div></details>`;
+  }).join("");
+
+  const slotHtml = catalog.roster_slots.map(slot=>{
+    const val = slots[slot] ?? 0;
+    return `<div class="rules-slot"><label for="${rulesSlotId(slot)}">${esc(slot)}</label>
+      <input type="number" min="0" max="10" step="1" id="${rulesSlotId(slot)}" data-slot-name="${esc(slot)}" value="${esc(val)}" /></div>`;
+  }).join("");
+
+  $("rulesBody").innerHTML = `
+    <details class="rules-grp" open><summary>Roster</summary><div class="body">
+      <div class="rules-row"><label for="rf-team-count">Team count</label>
+        <div class="rf-input-wrap">${rulesPill("team_count", teamCount)}
+          <input type="number" min="2" max="32" step="1" class="rules-teamcount" id="rf-team-count" value="${esc(teamCount)}" /></div></div>
+      <div class="faint" style="font-size:11px;margin:8px 0 6px">Starting lineup slots (0 = not used)</div>
+      <div class="rules-slots">${slotHtml}</div>
+    </div></details>
+    ${groupHtml}
+    <div class="faint" style="font-size:11px;margin-top:6px">${RULES.updated_at?`ESPN settings last refreshed ${ago(new Date(RULES.updated_at).getTime()/1000)}`:"ESPN settings never fetched yet — use Refetch below once you've connected."}</div>
+  `;
+}
+function collectRulesOverrides(){
+  // The PUT replaces the whole override layer, so this must return the COMPLETE
+  // layer: every field whose form value differs from the ESPN-DETECTED value
+  // (NOT the merged value — diffing against merged would drop previously saved
+  // overrides, silently reverting them on the next save). Setting a field back
+  // to its detected value naturally removes that override.
+  const overrides = {};
+  const scoring = {};
+  document.querySelectorAll("[data-scoring-key]").forEach(inp=>{
+    const key = inp.dataset.scoringKey;
+    const det = rulesDetected(`scoring.${key}`);
+    const baseline = (det===undefined||det===null) ? 0 : Number(det); // missing = scores 0
+    const next = parseFloat(inp.value);
+    if(!Number.isNaN(next) && next !== baseline) scoring[key]=next;
+  });
+  if(Object.keys(scoring).length) overrides.scoring = scoring;
+
+  // Roster: if ANY slot differs from detected, submit the FULL slot dict
+  // (roster.slots replaces wholesale).
+  let slotsChanged = false;
+  const slots = {};
+  document.querySelectorAll("[data-slot-name]").forEach(inp=>{
+    const slot = inp.dataset.slotName;
+    const det = rulesDetected(`roster.slots.${slot}`);
+    const baseline = (det===undefined||det===null) ? 0 : Number(det);
+    const next = parseInt(inp.value,10) || 0;
+    slots[slot] = next;
+    if(next !== baseline) slotsChanged = true;
+  });
+  const teamCountInp = $("rf-team-count");
+  const detTeamCount = rulesDetected("team_count");
+  const teamBaseline = (detTeamCount===undefined||detTeamCount===null) ? 12 : Number(detTeamCount);
+  const nextTeamCount = teamCountInp ? parseInt(teamCountInp.value,10) : NaN;
+  const teamCountChanged = !Number.isNaN(nextTeamCount) && nextTeamCount !== teamBaseline;
+  if(slotsChanged) overrides.roster = {slots};
+  if(teamCountChanged) overrides.team_count = nextTeamCount;
+  return overrides;
+}
+async function saveRules(){
+  const btn = $("rulesSaveBtn"); btn.classList.add("busy"); btn.disabled=true;
+  $("rulesMsg").className = "msg";
+  try{
+    const overrides = collectRulesOverrides();
+    await api("PUT",`/api/leagues/${ACTIVE}/rules`,{overrides});
+    toast("Rules saved — rebuild to apply");
+    closeRules();
+    loadLeagues(true);
+  }catch(e){ msg("rulesMsg", e.message, false); }
+  btn.classList.remove("busy"); btn.disabled=false;
+}
+async function refetchRules(){
+  const btn = $("rulesRefetchBtn"); btn.classList.add("busy"); btn.disabled=true;
+  $("rulesMsg").className = "msg";
+  try{
+    const r = await api("POST",`/api/leagues/${ACTIVE}/rules/refetch`);
+    RULES.detected = r.detected; RULES.diff = r.diff; RULES.merged = r.merged;
+    renderRulesForm();
+    msg("rulesMsg","Refetched from ESPN.",true);
+  }catch(e){ msg("rulesMsg", e.message, false); }
+  btn.classList.remove("busy"); btn.disabled=false;
+}
 
 boot();
 </script>

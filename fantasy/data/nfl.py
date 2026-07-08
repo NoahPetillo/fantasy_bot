@@ -38,7 +38,10 @@ def load_weekly(seasons: list[int], refresh: bool = False) -> pd.DataFrame:
         try:
             df = pd.read_parquet(path)
             log.info("Loaded weekly stats from cache: %s (%d rows)", path, len(df))
-            return df
+            # Re-normalize on cache hits too: caches written before a
+            # normalization rule existed (e.g. the synthesized IDP columns)
+            # would otherwise silently miss it forever. Idempotent.
+            return _normalize_weekly(df)
         except (FileNotFoundError, OSError):
             pass
 
@@ -74,13 +77,32 @@ def load_weekly(seasons: list[int], refresh: bool = False) -> pd.DataFrame:
     return df
 
 
+# Granular nflverse defensive labels -> ESPN-style IDP positions (plus D/ST alias).
+_POSITION_NORMALIZE = {
+    "DEF": "D/ST", "DST": "D/ST",
+    "ILB": "LB", "MLB": "LB", "OLB": "LB",
+    "FS": "S", "SS": "S", "SAF": "S",
+    "NT": "DT", "EDGE": "DE",
+}
+
+
 def _normalize_weekly(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     present = [c for c in _FUMBLE_LOST_PARTS if c in df.columns]
     df["fumbles_lost"] = df[present].fillna(0).sum(axis=1) if present else 0.0
-    # Normalize D/ST position label to our canonical token if present.
+    # Normalize position labels to our canonical tokens if present.
     if "position" in df.columns:
-        df["position"] = df["position"].replace({"DEF": "D/ST", "DST": "D/ST"})
+        df["position"] = df["position"].replace(_POSITION_NORMALIZE)
+    # IDP conveniences: ESPN scores total tackles / half-sacks; nflverse splits
+    # them. Only synthesized when absent, so a source-provided column wins.
+    if "def_tackles_total" not in df.columns and "def_tackles_solo" in df.columns:
+        assists = (
+            df["def_tackle_assists"].fillna(0)
+            if "def_tackle_assists" in df.columns else 0.0
+        )
+        df["def_tackles_total"] = df["def_tackles_solo"].fillna(0) + assists
+    if "def_half_sacks" not in df.columns and "def_sacks" in df.columns:
+        df["def_half_sacks"] = df["def_sacks"].fillna(0) * 2.0
     return df
 
 
@@ -208,6 +230,29 @@ def player_snap_share(seasons: list[int], refresh: bool = False) -> pd.DataFrame
     out.to_parquet(path, index=False)
     log.info("Cached snap share -> %s (%d rows)", path, len(out))
     return out
+
+
+def load_depth_charts(season: int, refresh: bool = False) -> pd.DataFrame:
+    """Weekly depth charts for ``season`` (via nflreadpy), cached per season.
+
+    Includes special-teams roles (``depth_position`` in {'KR','KOR','PR',...}) with
+    ``depth_team`` as the string/numeric rank — the source for who returns kicks and
+    punts. Columns pass through nflreadpy verbatim (club_code, gsis_id, full_name,
+    depth_position, depth_team, formation, week, season, ...).
+    """
+    key = f"depth_{season}"
+    path = _cache_path(key)
+    if not refresh:
+        try:
+            return pd.read_parquet(path)
+        except (FileNotFoundError, OSError):
+            pass
+    import nflreadpy as nfl
+
+    df = nfl.load_depth_charts(seasons=[season]).to_pandas()
+    df.to_parquet(path, index=False)
+    log.info("Cached depth charts -> %s (%d rows)", path, len(df))
+    return df
 
 
 def load_player_ids(refresh: bool = False) -> pd.DataFrame:
