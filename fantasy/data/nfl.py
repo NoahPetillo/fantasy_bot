@@ -226,7 +226,25 @@ def player_snap_share(seasons: list[int], refresh: bool = False) -> pd.DataFrame
             pass
     import nflreadpy as nfl
 
-    snaps = nfl.load_snap_counts(seasons=seasons).to_pandas()
+    # nflreadpy rejects any season past its "current" one (e.g. 2026 before the
+    # season starts -> "Season must be between 2012 and 2025"). A projection for
+    # the upcoming season legitimately asks for it, so load season-by-season and
+    # skip the unpublished ones — snap share just resolves to NaN/0 for those,
+    # exactly like load_weekly handles a not-yet-published season.
+    try:
+        snaps = nfl.load_snap_counts(seasons=seasons).to_pandas()
+        loaded = list(seasons)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Batch snap-count load failed (%s); loading season-by-season.", e)
+        frames, loaded = [], []
+        for s in seasons:
+            try:
+                frames.append(nfl.load_snap_counts(seasons=[s]).to_pandas())
+                loaded.append(s)
+            except Exception as se:  # noqa: BLE001
+                log.warning("Snap counts for %s unavailable (skipping): %s", s, se)
+        snaps = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
     xwalk = load_player_ids()
     cols = {c.lower(): c for c in xwalk.columns}
     pfr_c, gsis_c = cols.get("pfr_id"), cols.get("gsis_id")
@@ -242,8 +260,13 @@ def player_snap_share(seasons: list[int], refresh: bool = False) -> pd.DataFrame
     else:
         log.warning("Snap crosswalk unavailable; snap-share feature will be empty.")
         out = pd.DataFrame(columns=out_cols)
-    out.to_parquet(path, index=False)
-    log.info("Cached snap share -> %s (%d rows)", path, len(out))
+    # Only cache when every requested season loaded — a partial result would be
+    # served under the full-range key even after the missing season publishes.
+    if set(loaded) == set(seasons):
+        out.to_parquet(path, index=False)
+        log.info("Cached snap share -> %s (%d rows)", path, len(out))
+    else:
+        log.info("Loaded snap share for %s (partial; not cached)", loaded)
     return out
 
 
